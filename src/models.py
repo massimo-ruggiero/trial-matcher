@@ -12,6 +12,15 @@ class Kind(StrEnum):
     EXCLUSION = "exclusion"
 
 
+class Source(StrEnum):
+    """How a criterion's kind was decided. Recorded so the cost of guessing can
+    be measured instead of assumed."""
+
+    HEADER = "header"  # an explicit "Inclusion/Exclusion Criteria" line
+    INFERRED = "inferred"  # guessed from the wording, e.g. "must not have"
+    DEFAULT = "default"  # no signal anywhere: assumed inclusion
+
+
 @dataclass(frozen=True, slots=True)
 class Topic:
     topic_id: int
@@ -67,6 +76,7 @@ class Criterion:
     kind: Kind
     text: str
     index: int
+    source: Source = Source.DEFAULT
 
     @property
     def ref(self) -> str:
@@ -78,5 +88,6 @@ class Criterion:
             "kind": self.kind.value,
             "text": self.text,
             "index": self.index,
+            "source": self.source.value,
             "ref": self.ref,
         }
