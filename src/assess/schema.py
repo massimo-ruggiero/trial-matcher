@@ -11,7 +11,8 @@ class Verdict(StrEnum):
 def schema() -> dict:
     """The model reads the criteria block and finds the criteria itself, so
     neither their number nor their polarity can be imposed here. Evidence is a
-    list because one criterion can be settled by two separate passages."""
+    list because one criterion can be settled by two separate passages, and
+    rationale is where reasoning goes when no passage can be copied for it."""
     return {
         "type": "object",
         "properties": {
@@ -23,9 +24,10 @@ def schema() -> dict:
                         "criterion": {"type": "string"},
                         "kind": {"type": "string", "enum": ["inclusion", "exclusion"]},
                         "evidence": {"type": "array", "items": {"type": "string"}},
+                        "rationale": {"type": "string"},
                         "verdict": {"type": "string", "enum": [v.value for v in Verdict]},
                     },
-                    "required": ["criterion", "kind", "evidence", "verdict"],
+                    "required": ["criterion", "kind", "evidence", "rationale", "verdict"],
                 },
             }
         },
@@ -45,6 +47,7 @@ def parse(raw: str, nct_id: str) -> list[dict]:
             "kind": item["kind"],
             "verdict": Verdict(item["verdict"]).value,
             "evidence": clean(item["evidence"]),
+            "rationale": item.get("rationale", "").strip(),
         }
         for i, item in enumerate(json.loads(raw)["criteria"], 1)
     ]
