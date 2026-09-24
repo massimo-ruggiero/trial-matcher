@@ -45,7 +45,6 @@ indent-style = "space"
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
-markers = ["integration: needs a running Qdrant (deselect with -m 'not integration')"]
 
 [tool.uv]
 package = false

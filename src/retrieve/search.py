@@ -6,7 +6,7 @@ from fastembed import SparseTextEmbedding
 from qdrant_client import QdrantClient, models
 from sentence_transformers import SentenceTransformer
 
-from src.config import COLLECTION, DENSE, QDRANT_URL, SPARSE, get_device
+from src.config import COLLECTION, DENSE, QDRANT_PATH, SPARSE, get_device
 
 app = typer.Typer()
 
@@ -57,7 +57,7 @@ class Searcher:
     @classmethod
     def open(cls, device: str | None = None) -> "Searcher":
         return cls(
-            client=QdrantClient(url=QDRANT_URL),
+            client=QdrantClient(path=str(QDRANT_PATH)),
             dense_model=SentenceTransformer(DENSE_MODEL, device=device or get_device()),
             sparse_model=SparseTextEmbedding(SPARSE_MODEL),
         )
