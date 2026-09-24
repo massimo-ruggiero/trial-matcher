@@ -1,5 +1,4 @@
 import json
-import time
 from collections.abc import Iterator
 from itertools import batched
 from pathlib import Path
@@ -10,7 +9,7 @@ from qdrant_client import QdrantClient, models
 from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
 
-from src.config import COLLECTION, DATA_PROCESSED, DENSE, QDRANT_URL, SPARSE, get_device
+from src.config import COLLECTION, DATA_PROCESSED, DENSE, QDRANT_PATH, SPARSE, get_device
 from src.models import Trial
 
 app = typer.Typer()
@@ -60,7 +59,7 @@ def main(
     dense_model = SentenceTransformer(DENSE_MODEL, device=device)
     sparse_model = SparseTextEmbedding(SPARSE_MODEL)
 
-    client = QdrantClient(url=QDRANT_URL)
+    client = QdrantClient(path=str(QDRANT_PATH))
     ensure_collection(client, dense_model.get_embedding_dimension(), recreate)
 
     indexed = empty = 0
@@ -73,7 +72,6 @@ def main(
             continue
         chunk, docs = zip(*pairs)
 
-        # normalize_embeddings must match Distance.COSINE here and in search.py:
         # normalized vectors make cosine equal to the dot product Qdrant computes.
         dense_vecs = dense_model.encode(
             list(docs),
@@ -85,7 +83,6 @@ def main(
 
         points = [
             models.PointStruct(
-                # Deterministic: re-running overwrites instead of duplicating.
                 id=trial.point_id,
                 vector={
                     DENSE: dense.tolist(),
@@ -93,19 +90,12 @@ def main(
                         indices=sparse.indices.tolist(), values=sparse.values.tolist()
                     ),
                 },
-                # Minimal on purpose: the run file only needs the NCT id, and the
-                # text is already in the JSONL.
                 payload={"nct_id": trial.nct_id, "title": trial.title},
             )
             for trial, dense, sparse in zip(chunk, dense_vecs, sparse_vecs)
         ]
-        client.upsert(COLLECTION, points=points, wait=False)
+        client.upsert(COLLECTION, points=points)
         indexed += len(points)
-
-    # Upserts were sent with wait=False, so Qdrant is still indexing: block
-    # until it settles, otherwise the count below reports a partial number.
-    while client.get_collection(COLLECTION).status != models.CollectionStatus.GREEN:
-        time.sleep(1)
 
     print(f"\nindexed: {indexed}   empty document: {empty}")
     print(f"collection {COLLECTION}: {client.count(COLLECTION).count} points")

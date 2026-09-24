@@ -20,7 +20,6 @@ def load_topics(year: int) -> list[dict]:
 
 
 def load_qrels(year: int) -> dict[str, dict[str, int]]:
-    """Topic ids stay strings: pytrec_eval matches run and qrels by exact key."""
     qrels: dict[str, dict[str, int]] = {}
     for line in (DATA_RAW / "trec-ct" / f"qrels{year}.txt").read_text().splitlines():
         if not line.strip():
@@ -31,9 +30,6 @@ def load_qrels(year: int) -> dict[str, dict[str, int]]:
 
 
 def eligible_only(qrels: dict[str, dict[str, int]]) -> dict[str, dict[str, int]]:
-    """Excluded (1) becomes non-relevant. This is the view that isolates what the
-    eligibility pass is meant to fix: a trial the patient is barred from is not a
-    good answer, however topically close it looks."""
     return {t: {d: int(j == 2) for d, j in docs.items()} for t, docs in qrels.items()}
 
 
