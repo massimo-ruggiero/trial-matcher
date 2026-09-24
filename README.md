@@ -24,14 +24,30 @@ del paziente quanto uno adatto, a volte di più. Da qui l'architettura in due fa
 uv run streamlit run gui.py
 ```
 
-Si scrive la nota del paziente (o si carica uno dei topic del TREC), si cercano
-i trial, e su ognuno un pulsante manda il modello a verificarne i criteri: circa
-35 secondi, al termine dei quali compaiono il verdetto, i criteri uno per uno e
-la nota con le frasi citate evidenziate dove si trovano.
+Si scrive la nota del paziente (o si carica uno dei topic del TREC) e si cercano
+i trial. Ogni risultato si può aprire subito: i criteri sono leggibili prima di
+spendere tempo di modello, divisi in inclusione ed esclusione. Il pulsante
+*Verify* manda il modello a giudicarli uno per uno, circa 35 secondi; *Verify
+all* mette in coda tutta la lista e sblocca ogni trial appena è pronto, mentre
+gli altri restano consultabili.
 
-Il primo avvio richiede una trentina di secondi per caricare encoder e corpus.
-Serve Ollama acceso per la verifica, e l'app va chiusa prima di lanciare
-`build` o `eval`, perché Qdrant in locale accetta un processo alla volta.
+Verificato un trial, accanto a ogni criterio compare **la frase della nota che
+lo decide**, evidenziata anche nella nota stessa. Ogni citazione viene cercata
+nella nota: se non si trova alla lettera è marcata `(not in the note)`, perché
+un modello che riscrive la cartella mentre dice di citarla è la cosa che va
+vista per prima. Dove non c'è niente da citare — o dove la citazione da sola non
+basta — il modello scrive una motivazione, marcata `WHY` per distinguerla dal
+testo reale.
+
+I colori delle righe seguono **la conseguenza per il paziente, non il verdetto**:
+un criterio di esclusione risultato vero è rosso anche se la risposta è "sì".
+
+Il primo avvio richiede una ventina di secondi, di cui la metà per aprire
+l'indice: Qdrant in locale carica in memoria i vettori di ogni collection
+presente in `data/qdrant`, quelle delle ablation comprese. Poi encoder e indice
+restano in cache e ogni interazione è immediata. Serve Ollama acceso per la
+verifica, e l'app va chiusa prima di lanciare `build` o `eval`, perché Qdrant in
+locale accetta un processo alla volta.
 
 ## Prerequisiti
 
@@ -63,10 +79,14 @@ shortlist da un run file già prodotto, quindi non tocca l'indice:
 uv run python -m src.assess.judge --topics 12-31 --depth 50 --run dense_medembed-small
 ```
 
-Circa 35 secondi per trial. I verdetti finiscono in `data/processed/verdicts2021.jsonl`
-con una chiave che comprende modello e versione del prompt: interrompere e
-rilanciare riprende da dove era arrivato, e cambiare il prompt non riusa mai i
-verdetti vecchi.
+Circa 35 secondi per trial. Per ogni criterio il modello restituisce le
+citazioni, una motivazione quando serve e il verdetto, **in quest'ordine**: la
+generazione segue l'ordine dei campi, quindi deve cercare una prova prima di
+poter decidere, non giustificare a posteriori una decisione già presa.
+
+I verdetti finiscono in `data/processed/verdicts2021.jsonl` con una chiave che
+comprende modello e versione del prompt: interrompere e rilanciare riprende da
+dove era arrivato, e cambiare prompt o schema non riusa mai i verdetti vecchi.
 
 **Riordinare** e misurare il risultato:
 
