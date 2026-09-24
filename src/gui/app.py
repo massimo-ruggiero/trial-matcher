@@ -1,6 +1,6 @@
 """Streamlit front end: write a note, see the trials, verify one on demand.
 
-Run with: uv run streamlit run src/gui/app.py
+Launched from gui.py at the project root: uv run streamlit run gui.py
 """
 
 import html
@@ -270,4 +270,5 @@ def main() -> None:
         new_trial_tab(searcher, trials)
 
 
-main()
+if __name__ == "__main__":
+    main()

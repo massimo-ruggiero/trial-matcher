@@ -18,9 +18,20 @@ del paziente quanto uno adatto, a volte di più. Da qui l'architettura in due fa
    criterio** se il paziente li soddisfa, citando la frase della nota che lo
    dimostra; i verdetti riordinano la lista
 
-> Un'interfaccia grafica è prevista: scrivere la nota, vedere i trial, e per
-> ciascuno il dettaglio dei criteri con l'evidenza evidenziata nel testo.
-> Finché non esiste, tutto passa dalla riga di comando.
+## Interfaccia
+
+```bash
+uv run streamlit run gui.py
+```
+
+Si scrive la nota del paziente (o si carica uno dei topic del TREC), si cercano
+i trial, e su ognuno un pulsante manda il modello a verificarne i criteri: circa
+35 secondi, al termine dei quali compaiono il verdetto, i criteri uno per uno e
+la nota con le frasi citate evidenziate dove si trovano.
+
+Il primo avvio richiede una trentina di secondi per caricare encoder e corpus.
+Serve Ollama acceso per la verifica, e l'app va chiusa prima di lanciare
+`build` o `eval`, perché Qdrant in locale accetta un processo alla volta.
 
 ## Prerequisiti
 
