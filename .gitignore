@@ -222,3 +222,6 @@ __marimo__/
 # Project
 data/
 runs/
+
+# Running notes, not part of the deliverable
+reports/RESULTS.md

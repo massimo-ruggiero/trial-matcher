@@ -5,7 +5,7 @@ import pytrec_eval
 import typer
 from tqdm import tqdm
 
-from src.config import DATA_PROCESSED, DATA_RAW
+from src.config import DATA_PROCESSED, DATA_RAW, DEFAULT_ENCODER
 from src.retrieve.search import Mode, Searcher
 
 app = typer.Typer()
@@ -65,15 +65,23 @@ def excluded_in_top_k(run: dict, qrels: dict[str, dict[str, int]], k: int = 10) 
 
 
 @app.command()
-def main(year: int = 2021, limit: int = 1000) -> None:
+def main(
+    year: int = 2021,
+    limit: int = 1000,
+    encoder: str = DEFAULT_ENCODER,
+    prefix: bool = True,
+) -> None:
     topics = load_topics(year)
     qrels = load_qrels(year)
     binary = eligible_only(qrels)
-    searcher = Searcher.open()
+    searcher = Searcher.open(encoder, prefix=None if prefix else "")
+    # Runs of different encoders must not overwrite each other.
+    tag = "" if encoder == DEFAULT_ENCODER else f"_{encoder}"
+    tag += "" if prefix else "_noprefix"
 
     rows = []
     for mode in Mode:
-        path = write_run(searcher, topics, mode, limit, f"{mode.value}{year}")
+        path = write_run(searcher, topics, mode, limit, f"{mode.value}{tag}{year}")
         with open(path) as f:
             run = pytrec_eval.parse_run(f)
         rows.append(
@@ -85,7 +93,7 @@ def main(year: int = 2021, limit: int = 1000) -> None:
             )
         )
 
-    print(f"\n=== TREC CT {year}, judged subset, top-{limit} ===")
+    print(f"\n=== TREC CT {year}, judged subset, top-{limit}, encoder {encoder} ===")
     head = (
         f"{'mode':<8}{'nDCG@10':>9}{'nDCG@10*':>10}"
         f"{'P@10':>8}{'P@10*':>8}{'R@1000':>9}{'excl@10':>9}"

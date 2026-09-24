@@ -1,4 +1,5 @@
 import os
+from dataclasses import dataclass
 from pathlib import Path
 
 import torch
@@ -18,6 +19,34 @@ COLLECTION = os.getenv("QDRANT_COLLECTION", "trials")
 # they live here rather than being repeated as literals in both modules.
 DENSE = "dense"
 SPARSE = "bm25"
+
+# bge-*-v1.5 are asymmetric: the instruction goes on the query, never on the
+# document. MedEmbed is a bge fine-tune, so it inherits the convention.
+BGE_PREFIX = "Represent this sentence for searching relevant passages: "
+
+
+@dataclass(frozen=True, slots=True)
+class Encoder:
+    model: str
+    prefix: str = ""
+
+
+ENCODERS = {
+    "bge-small": Encoder("BAAI/bge-small-en-v1.5", BGE_PREFIX),
+    "bge-base": Encoder("BAAI/bge-base-en-v1.5", BGE_PREFIX),
+    "medembed-small": Encoder("abhinand/MedEmbed-small-v0.1", BGE_PREFIX),
+    "medembed-base": Encoder("abhinand/MedEmbed-base-v0.1", BGE_PREFIX),
+}
+# Chosen on the 2021 ablation: the medical fine-tune beats the general model of
+# the same size, and growing inside the medical family adds nothing measurable.
+DEFAULT_ENCODER = "medembed-small"
+
+
+def collection_for(encoder: str) -> str:
+    """One collection per encoder. The name always carries the encoder, so a
+    query can never land in an index built by a different model: two encoders
+    of equal width would not even raise an error."""
+    return f"{COLLECTION}_{encoder.replace('-', '_')}"
 
 
 def get_device() -> str:

@@ -6,15 +6,19 @@ from fastembed import SparseTextEmbedding
 from qdrant_client import QdrantClient, models
 from sentence_transformers import SentenceTransformer
 
-from src.config import COLLECTION, DENSE, QDRANT_PATH, SPARSE, get_device
+from src.config import (
+    DEFAULT_ENCODER,
+    DENSE,
+    ENCODERS,
+    QDRANT_PATH,
+    SPARSE,
+    collection_for,
+    get_device,
+)
 
 app = typer.Typer()
 
-DENSE_MODEL = "BAAI/bge-small-en-v1.5"
 SPARSE_MODEL = "Qdrant/bm25"
-
-# bge-*-v1.5 are asymmetric: the query gets this prefix, the document gets none.
-QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
 
 # Qdrant's server-side fusion hardcodes 1/(1+rank). That decay is far steeper
 # than the customary k=60, so a strong ranking and a weak one end up nearly
@@ -53,19 +57,30 @@ class Searcher:
     client: QdrantClient
     dense_model: SentenceTransformer
     sparse_model: SparseTextEmbedding
+    collection: str
+    prefix: str
 
     @classmethod
-    def open(cls, device: str | None = None) -> "Searcher":
+    def open(
+        cls,
+        encoder: str = DEFAULT_ENCODER,
+        device: str | None = None,
+        prefix: str | None = None,
+    ) -> "Searcher":
+        """prefix=None keeps the encoder's own convention; pass "" to drop it."""
+        chosen = ENCODERS[encoder]
         return cls(
             client=QdrantClient(path=str(QDRANT_PATH)),
-            dense_model=SentenceTransformer(DENSE_MODEL, device=device or get_device()),
+            dense_model=SentenceTransformer(chosen.model, device=device or get_device()),
             sparse_model=SparseTextEmbedding(SPARSE_MODEL),
+            collection=collection_for(encoder),
+            prefix=chosen.prefix if prefix is None else prefix,
         )
 
     def dense_query(self, text: str) -> list[float]:
         # normalize_embeddings must match build.py, or cosine means nothing.
         vec = self.dense_model.encode(
-            QUERY_PREFIX + text, normalize_embeddings=True, show_progress_bar=False
+            self.prefix + text, normalize_embeddings=True, show_progress_bar=False
         )
         return vec.tolist()
 
@@ -77,7 +92,7 @@ class Searcher:
 
     def _points(self, query, using: str, limit: int) -> list[tuple[str, float]]:
         result = self.client.query_points(
-            COLLECTION, query=query, using=using, limit=limit, with_payload=["nct_id"]
+            self.collection, query=query, using=using, limit=limit, with_payload=["nct_id"]
         )
         return [(point.payload["nct_id"], point.score) for point in result.points]
 
@@ -107,7 +122,7 @@ class Searcher:
 
         if rrf_k is None:
             result = self.client.query_points(
-                COLLECTION,
+                self.collection,
                 prefetch=[
                     models.Prefetch(query=self.dense_query(text), using=DENSE, limit=prefetch),
                     models.Prefetch(query=self.sparse_query(text), using=SPARSE, limit=prefetch),
@@ -126,8 +141,14 @@ class Searcher:
 
 
 @app.command()
-def main(query: str, mode: Mode = Mode.HYBRID, limit: int = 10) -> None:
-    searcher = Searcher.open()
+def main(
+    query: str,
+    mode: Mode = Mode.HYBRID,
+    limit: int = 10,
+    encoder: str = DEFAULT_ENCODER,
+    prefix: bool = True,
+) -> None:
+    searcher = Searcher.open(encoder, prefix=None if prefix else "")
     for rank, (nct_id, score) in enumerate(searcher.search(query, mode, limit), 1):
         print(f"{rank:>3}  {score:.4f}  {nct_id}")
 

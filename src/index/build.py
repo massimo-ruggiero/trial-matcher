@@ -9,12 +9,20 @@ from qdrant_client import QdrantClient, models
 from sentence_transformers import SentenceTransformer
 from tqdm import tqdm
 
-from src.config import COLLECTION, DATA_PROCESSED, DENSE, QDRANT_PATH, SPARSE, get_device
+from src.config import (
+    DATA_PROCESSED,
+    DEFAULT_ENCODER,
+    DENSE,
+    ENCODERS,
+    QDRANT_PATH,
+    SPARSE,
+    collection_for,
+    get_device,
+)
 from src.models import Trial
 
 app = typer.Typer()
 
-DENSE_MODEL = "BAAI/bge-small-en-v1.5"
 SPARSE_MODEL = "Qdrant/bm25"
 
 
@@ -27,14 +35,14 @@ def load_trials(path: Path) -> Iterator[Trial]:
             yield Trial(**d)
 
 
-def ensure_collection(client: QdrantClient, size: int, recreate: bool) -> None:
-    if recreate and client.collection_exists(COLLECTION):
-        client.delete_collection(COLLECTION)
-    if client.collection_exists(COLLECTION):
+def ensure_collection(client: QdrantClient, collection: str, size: int, recreate: bool) -> None:
+    if recreate and client.collection_exists(collection):
+        client.delete_collection(collection)
+    if client.collection_exists(collection):
         return
 
     client.create_collection(
-        COLLECTION,
+        collection,
         vectors_config={DENSE: models.VectorParams(size=size, distance=models.Distance.COSINE)},
         # fastembed's bm25 emits term frequencies only — IDF needs corpus-wide
         # statistics it cannot see. Modifier.IDF makes Qdrant apply it at query
@@ -52,15 +60,18 @@ def main(
     detailed: bool = False,
     recreate: bool = False,
     device: str | None = None,
+    encoder: str = DEFAULT_ENCODER,
 ) -> None:
     device = device or get_device()
-    print(f"device: {device}   dense: {DENSE_MODEL}   detailed: {detailed}")
+    dense_model_name = ENCODERS[encoder].model
+    collection = collection_for(encoder)
+    print(f"device: {device}   encoder: {encoder} ({dense_model_name})   detailed: {detailed}")
 
-    dense_model = SentenceTransformer(DENSE_MODEL, device=device)
+    dense_model = SentenceTransformer(dense_model_name, device=device)
     sparse_model = SparseTextEmbedding(SPARSE_MODEL)
 
     client = QdrantClient(path=str(QDRANT_PATH))
-    ensure_collection(client, dense_model.get_embedding_dimension(), recreate)
+    ensure_collection(client, collection, dense_model.get_embedding_dimension(), recreate)
 
     indexed = empty = 0
     trials = load_trials(DATA_PROCESSED / source)
@@ -94,11 +105,11 @@ def main(
             )
             for trial, dense, sparse in zip(chunk, dense_vecs, sparse_vecs)
         ]
-        client.upsert(COLLECTION, points=points)
+        client.upsert(collection, points=points)
         indexed += len(points)
 
     print(f"\nindexed: {indexed}   empty document: {empty}")
-    print(f"collection {COLLECTION}: {client.count(COLLECTION).count} points")
+    print(f"collection {collection}: {client.count(collection).count} points")
 
 
 if __name__ == "__main__":
