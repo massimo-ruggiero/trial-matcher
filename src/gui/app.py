@@ -19,10 +19,10 @@ from src.models import Trial
 from src.retrieve.search import Mode, Searcher
 
 BADGE = {
-    Label.ELIGIBLE: ("IDONEO", "#2ea043"),
-    Label.EXCLUDED: ("ESCLUSO", "#da3633"),
-    Label.INELIGIBLE: ("NON IDONEO", "#d29922"),
-    Label.UNJUDGED: ("da verificare", "#6e7681"),
+    Label.ELIGIBLE: ("ELIGIBLE", "#2ea043"),
+    Label.EXCLUDED: ("EXCLUDED", "#da3633"),
+    Label.INELIGIBLE: ("NOT ELIGIBLE", "#d29922"),
+    Label.UNJUDGED: ("not checked", "#6e7681"),
 }
 MARK = {"yes": "✓", "no": "✗", "unclear": "?"}
 GOOD, BAD, UNKNOWN = "#2ea043", "#da3633", "#6e7681"
@@ -34,19 +34,15 @@ def consequence(kind: str, verdict: str) -> tuple[str, str]:
     if verdict == "unclear" or verdict is None:
         return UNKNOWN, ""
     disqualifies = (kind == "exclusion") == (verdict == "yes")
-    return (
-        (BAD, "esclude" if kind == "exclusion" else "non soddisfatto")
-        if disqualifies
-        else (GOOD, "")
-    )
+    return (BAD, "excludes" if kind == "exclusion" else "not met") if disqualifies else (GOOD, "")
 
 
-@st.cache_resource(show_spinner="Carico l'encoder e l'indice...")
+@st.cache_resource(show_spinner="Loading the encoder and the index...")
 def get_searcher() -> Searcher:
     return Searcher.open()
 
 
-@st.cache_resource(show_spinner="Carico i trial...")
+@st.cache_resource(show_spinner="Loading the trials...")
 def get_trials() -> dict[str, dict]:
     """Title and criteria block per trial: the payload in Qdrant is minimal."""
     with open(DATA_PROCESSED / "trials_judged.jsonl") as f:
@@ -122,7 +118,7 @@ def render_detail(record: dict, note: str) -> None:
         )
     unclear = sum(1 for r in record["criteria"] if r["verdict"] == "unclear")
     st.caption(
-        f"{len(record['criteria'])} criteri · {unclear} senza evidenza nella nota "
+        f"{len(record['criteria'])} criteria · {unclear} not addressed by the note "
         f"· {record.get('seconds', 0)}s"
     )
 
@@ -134,18 +130,18 @@ def patient_tab(searcher: Searcher, trials: dict, settings: dict) -> None:
     with st.form("search", border=False):
         col_note, col_pick = st.columns([4, 1])
         with col_pick:
-            chosen = st.selectbox("carica un topic", ["—", *topics], label_visibility="collapsed")
+            chosen = st.selectbox("load a topic", ["—", *topics], label_visibility="collapsed")
         with col_note:
             note = st.text_area(
-                "Nota di ammissione",
+                "Admission note",
                 value=topics.get(chosen, ""),
                 height=140,
-                placeholder="Scrivi la nota...",
+                placeholder="Paste or write the patient's note...",
             )
-        searched = st.form_submit_button("Cerca trial", type="primary")
+        searched = st.form_submit_button("Search trials", type="primary")
 
     if searched and note.strip():
-        with st.spinner("cerco..."):
+        with st.spinner("searching..."):
             st.session_state.hits = searcher.search(note, Mode.DENSE, limit=settings["depth"])
         st.session_state.note = note
         st.session_state.verdicts = {}
@@ -153,14 +149,12 @@ def patient_tab(searcher: Searcher, trials: dict, settings: dict) -> None:
     hits = st.session_state.get("hits", [])
     if not hits:
         return
-    st.caption(f"{len(hits)} trial · encoder {DEFAULT_ENCODER}")
+    st.caption(f"{len(hits)} trials · encoder {DEFAULT_ENCODER}")
 
     for rank, (nct_id, score) in enumerate(hits, 1):
-        trial = trials.get(nct_id, {"title": "(non nel corpus)", "criteria": ""})
+        trial = trials.get(nct_id, {"title": "(not in the corpus)", "criteria": ""})
         record = st.session_state.verdicts.get(nct_id)
-        label, points = classify(
-            record, settings["unclear"], settings["grounded"], settings["scoring"]
-        )
+        label, points = classify(record)
         extra = f"{points:.2f}" if record and label is Label.ELIGIBLE else ""
 
         with st.container(border=True):
@@ -174,8 +168,8 @@ def patient_tab(searcher: Searcher, trials: dict, settings: dict) -> None:
                 )
             with action:
                 if record is None:
-                    if st.button("verifica", key=f"go{nct_id}", disabled=not settings["ollama"]):
-                        with st.spinner("il modello legge i criteri..."):
+                    if st.button("verify", key=f"go{nct_id}", disabled=not settings["ollama"]):
+                        with st.spinner("the model is reading the criteria..."):
                             st.session_state.verdicts[nct_id] = judge(
                                 st.session_state.note, trial["criteria"], nct_id, MODEL
                             )
@@ -184,22 +178,22 @@ def patient_tab(searcher: Searcher, trials: dict, settings: dict) -> None:
                 if record["error"]:
                     st.warning(record["error"])
                 else:
-                    with st.expander("criteri", expanded=True):
+                    with st.expander("criteria", expanded=True):
                         render_detail(record, st.session_state.note)
 
 
 def new_trial_tab(searcher: Searcher, trials: dict) -> None:
     with st.form("new_trial"):
         nct_id = st.text_input("NCT id", value="NCT99999999")
-        title = st.text_input("Titolo")
-        conditions = st.text_input("Patologie (separate da virgola)")
-        summary = st.text_area("Riassunto", height=100)
+        title = st.text_input("Title")
+        conditions = st.text_input("Conditions (comma separated)")
+        summary = st.text_area("Summary", height=100)
         criteria = st.text_area(
-            "Criteri di eleggibilità",
+            "Eligibility criteria",
             height=200,
             placeholder="Inclusion Criteria:\n  - ...\n\nExclusion Criteria:\n  - ...",
         )
-        submitted = st.form_submit_button("Salva e indicizza", type="primary")
+        submitted = st.form_submit_button("Save and index", type="primary")
 
     if not submitted:
         return
@@ -212,10 +206,10 @@ def new_trial_tab(searcher: Searcher, trials: dict) -> None:
     )
     document = trial.to_document()
     if not document.strip():
-        st.error("Servono almeno titolo, patologie o riassunto: è ciò che finisce nell'indice.")
+        st.error("Title, conditions or summary are needed: that is what gets indexed.")
         return
 
-    with st.spinner("calcolo i vettori e indicizzo..."):
+    with st.spinner("embedding and indexing..."):
         dense = searcher.dense_model.encode(document, normalize_embeddings=True)
         sparse = next(iter(searcher.sparse_model.embed([document])))
         searcher.client.upsert(
@@ -234,36 +228,37 @@ def new_trial_tab(searcher: Searcher, trials: dict) -> None:
             ],
         )
     trials[nct_id] = {"title": title, "criteria": criteria}
-    st.success(f"{nct_id} indicizzato. Testo indicizzato: {document[:120]}...")
+    st.success(f"{nct_id} indexed. Indexed text: {document[:120]}...")
 
 
 def main() -> None:
-    st.set_page_config(page_title="trial-matcher", layout="wide")
+    st.set_page_config(page_title="Trial Matcher", layout="wide")
     searcher, trials = get_searcher(), get_trials()
     online = ollama_is_up()
 
     with st.sidebar:
-        st.markdown("### trial-matcher")
-        st.caption(f"encoder · `{ENCODERS[DEFAULT_ENCODER].model.split('/')[-1]}`")
+        st.markdown("### Trial Matcher")
+        st.caption(f"Encoder · `{ENCODERS[DEFAULT_ENCODER].model.split('/')[-1]}`")
         dot = "#2ea043" if online else "#da3633"
         st.markdown(
-            f"<span style='color:#8b949e'>giudice · <code>{MODEL}</code></span> "
+            f"<span style='color:#8b949e'>Judge · <code>{MODEL}</code></span> "
             f"<span style='color:{dot}'>●</span>",
             unsafe_allow_html=True,
         )
-        st.caption(f"indice · {searcher.client.count(collection_for(DEFAULT_ENCODER)).count} trial")
+        st.caption(f"Index · {searcher.client.count(collection_for(DEFAULT_ENCODER)).count} trials")
         st.divider()
+        st.caption("Results")
         settings = {
-            "depth": st.slider("trial da mostrare", 5, 30, 10),
-            "unclear": st.slider("peso di «non si sa»", 0.0, 1.0, 0.5, 0.25),
-            "grounded": st.checkbox("pretendi una citazione verificata"),
-            "scoring": "smoothed",
+            "depth": st.segmented_control(
+                "Results", [5, 10, 20], default=10, label_visibility="collapsed"
+            )
+            or 10,
             "ollama": online,
         }
         if not online:
-            st.warning("Ollama non risponde: la verifica dei criteri è disattivata.")
+            st.warning("Ollama is not responding: verification is disabled.")
 
-    patient, new_trial = st.tabs(["Paziente", "Nuovo trial"])
+    patient, new_trial = st.tabs(["Patient", "New trial"])
     with patient:
         patient_tab(searcher, trials, settings)
     with new_trial:
