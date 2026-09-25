@@ -23,7 +23,9 @@ def main(
     out: Path = Path("kaggle/pack"),
     year: int = 2021,
     run: str = "dense_medembed-small",
-    topics: str = "12-31",
+    # Topic 1 is a tuning topic and rides along for smoke tests: a run that gets
+    # inspected line by line must not be one we later report numbers on.
+    topics: str = "1,12-31",
     depth: int = 20,
     archive: bool = True,
 ) -> None:
