@@ -207,12 +207,17 @@ Il file dei verdetti si scarica e si accoda a `data/processed/verdicts2021.jsonl
 la chiave `(topic, trial, modello, prompt)` rende l'unione idempotente e permette
 di riprendere una sessione interrotta ricaricando il file nel pacchetto.
 
-**Protocollo dell'ablation.** Venti topic (12-31) per profondità 20 fanno 400
-trial e circa 7.300 criteri per modello. È poco per la metrica di ranking, che su
-venti topic distingue solo differenze di nDCG@10\* superiori a 0.05, ed è molto
-per le misure che contano per criterio — criteri saltati, citazioni non fondate,
-JSON invalido — dove bastano a rilevare differenze di due o tre punti
-percentuali. Sono quelle a decidere il confronto; il ranking resta una conferma.
+**Protocollo dell'ablation.** Trentadue topic (12-43) per profondità 50 fanno
+1.600 trial e circa 29.000 criteri per modello, con un modello per persona in
+parallelo. La profondità viene da dove la curva dell'oracolo si appiattisce: fino
+a 50 ogni trial in più allarga lo spazio in cui un giudice può migliorare la
+classifica, oltre no. Su 32 topic il confronto appaiato distingue differenze di
+nDCG@10\* da 0.045 in su, su uno spazio di 0.53.
+
+È anche la configurazione della run finale, quindi il confronto produce già il
+risultato di sviluppo, per tutti i modelli invece che per il solo vincitore. I
+topic si giudicano in ordine crescente: chi si ferma prima resta confrontabile
+sul prefisso comune.
 
 ## Struttura
 

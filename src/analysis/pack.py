@@ -25,8 +25,8 @@ def main(
     run: str = "dense_medembed-small",
     # Topic 1 is a tuning topic and rides along for smoke tests: a run that gets
     # inspected line by line must not be one we later report numbers on.
-    topics: str = "1,12-31",
-    depth: int = 20,
+    topics: str = "1,12-43",
+    depth: int = 50,
     archive: bool = True,
 ) -> None:
     """Write kaggle/pack, to be uploaded as a Kaggle dataset.
