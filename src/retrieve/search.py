@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from enum import StrEnum
 
 import typer
 from fastembed import SparseTextEmbedding
@@ -15,6 +14,7 @@ from src.config import (
     collection_for,
     get_device,
 )
+from src.models import Mode
 
 app = typer.Typer()
 
@@ -24,15 +24,6 @@ SPARSE_MODEL = "Qdrant/bm25"
 # than the customary k=60, so a strong ranking and a weak one end up nearly
 # equally weighted; on this collection it costs ~8% nDCG@10 against fusing here.
 RRF_K = 60
-
-
-class Mode(StrEnum):
-    """Which ranking to produce. The single-signal modes are the baselines the
-    hybrid one has to beat."""
-
-    DENSE = "dense"
-    BM25 = "bm25"
-    HYBRID = "hybrid"
 
 
 def rrf(rankings: list[list[str]], k: int) -> list[tuple[str, float]]:

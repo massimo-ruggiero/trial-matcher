@@ -160,6 +160,46 @@ intero — ma resta per le statistiche sul corpus.
 e non producono numeri riportabili; i topic 12-75 sono la misura di sviluppo; il
 2022 è il test set, toccato una volta sola alla fine.
 
+## Confrontare i giudici su Kaggle
+
+Il giudizio dei criteri non tocca né l'indice né la GPU per gli embedding: legge
+una shortlist già prodotta e parla con Ollama. Si sposta quindi su una macchina
+con GPU gratuita senza portarci il corpus.
+
+Si costruisce il pacchetto di input — topic, shortlist e i soli blocchi dei
+trial in lista, circa 2 MB invece di 239:
+
+```bash
+uv run python -m src.analysis.pack --topics 12-31 --depth 20
+```
+
+Si carica `kaggle/pack` come dataset Kaggle (`trial-matcher-pack`) e si importa
+`kaggle/judge_ablation.ipynb`. Il notebook clona il repo, installa Ollama, e
+giudica la stessa shortlist con ogni modello. Serve GPU T4 x2 e internet attivo.
+
+La prima esecuzione ha `SMOKE = True`: un topic, un trial, due minuti, per
+verificare che i modelli si carichino e che i verdetti finiscano dove devono.
+
+I percorsi sono variabili d'ambiente, perché su Kaggle l'input è in sola
+lettura:
+
+| variabile | dove |
+|---|---|
+| `DATA_PROCESSED` | topic e blocchi dei criteri, in lettura |
+| `RUNS` | i run file |
+| `DATA_OUT` | i verdetti, in scrittura |
+
+Il file dei verdetti si scarica e si accoda a `data/processed/verdicts2021.jsonl`:
+la chiave `(topic, trial, modello, prompt)` rende l'unione idempotente e permette
+di riprendere una sessione interrotta ricaricando il file nel pacchetto.
+
+**Protocollo dell'ablation.** Venti topic (12-31) per profondità 20 fanno 400
+trial e circa 7.300 criteri per modello. È poco per la metrica di ranking, che su
+venti topic distingue solo differenze di nDCG@10\* superiori a 0.05, ed è molto
+per le misure che contano per criterio — criteri saltati, citazioni non fondate,
+JSON invalido — dove bastano a rilevare differenze di due o tre punti
+percentuali. Sono quelle a decidere il confronto; il ranking resta una conferma.
+
 ## Struttura
 
 - `src/ingest/` — download, parsing degli XML, splitting dei criteri
@@ -167,7 +207,7 @@ e non producono numeri riportabili; i topic 12-75 sono la misura di sviluppo; il
 - `src/retrieve/` — ricerca densa, BM25 e fusione RRF
 - `src/eval/` — run file in formato TREC e metriche
 - `src/assess/` — verifica dei criteri con l'LLM e riordino
-- `src/analysis/` — statistiche su qrels e corpus
+- `src/analysis/` — statistiche su qrels e corpus, pacchetto di input per Kaggle
 - `data/`, `runs/` — dati, indice e risultati, **non versionati**
 
 ## Sviluppo

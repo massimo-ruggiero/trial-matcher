@@ -2,14 +2,25 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-import torch
 from dotenv import load_dotenv
 
 load_dotenv()
 
 ROOT = Path(__file__).resolve().parent.parent
-DATA_RAW = ROOT / "data" / "raw"
-DATA_PROCESSED = ROOT / "data" / "processed"
+
+
+def _dir(name: str, default: Path) -> Path:
+    """Overridable from the environment, so the same commands run where the
+    inputs are mounted read-only and the outputs have to go somewhere else."""
+    return Path(os.getenv(name, default)).expanduser()
+
+
+DATA_RAW = _dir("DATA_RAW", ROOT / "data" / "raw")
+DATA_PROCESSED = _dir("DATA_PROCESSED", ROOT / "data" / "processed")
+# Verdicts and other written artefacts: the same place, unless the inputs are
+# read-only.
+DATA_OUT = _dir("DATA_OUT", DATA_PROCESSED)
+RUNS = _dir("RUNS", ROOT / "runs")
 
 # Qdrant in local mode: an on-disk collection opened in-process, no server.
 QDRANT_PATH = ROOT / "data" / "qdrant"
@@ -50,7 +61,12 @@ def collection_for(encoder: str) -> str:
 
 
 def get_device() -> str:
-    """Best available torch device, so the code runs on a peer machine too."""
+    """Best available torch device, so the code runs on a peer machine too.
+
+    torch is imported here and not at the top: judging criteria needs neither
+    an encoder nor a GPU, and that machine should not have to install it."""
+    import torch
+
     if torch.cuda.is_available():
         return "cuda"
     if torch.backends.mps.is_available():

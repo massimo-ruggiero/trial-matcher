@@ -225,3 +225,6 @@ runs/
 
 # Running notes, not part of the deliverable
 reports/RESULTS.md
+
+# Kaggle input pack: data, rebuilt with src.analysis.pack
+kaggle/pack/

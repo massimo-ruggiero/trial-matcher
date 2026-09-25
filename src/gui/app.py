@@ -16,8 +16,8 @@ from src.assess.rerank import Label, classify
 from src.config import DATA_PROCESSED, DEFAULT_ENCODER, DENSE, ENCODERS, SPARSE
 from src.eval.run import load_topics
 from src.ingest.criteria import parse_criteria
-from src.models import Trial
-from src.retrieve.search import Mode, Searcher
+from src.models import Mode, Trial
+from src.retrieve.search import Searcher
 
 BADGE = {
     Label.ELIGIBLE: ("ELIGIBLE", "#2ea043"),

@@ -7,7 +7,8 @@ import typer
 
 from src.assess.judge import MODEL, verdicts_path
 from src.assess.prompt import PROMPT_VERSION
-from src.eval.run import MEASURES, RUNS, eligible_only, evaluate, excluded_in_top_k, load_qrels
+from src.config import RUNS
+from src.eval.run import MEASURES, eligible_only, evaluate, excluded_in_top_k, load_qrels
 
 app = typer.Typer()
 

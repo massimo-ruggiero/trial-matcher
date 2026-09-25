@@ -9,8 +9,8 @@ from tqdm import tqdm
 
 from src.assess.prompt import PROMPT_VERSION, build_messages
 from src.assess.schema import parse, schema
-from src.config import DATA_PROCESSED
-from src.eval.run import RUNS, load_topics
+from src.config import DATA_OUT, DATA_PROCESSED, RUNS
+from src.eval.run import load_topics
 
 app = typer.Typer()
 
@@ -22,7 +22,8 @@ NUM_CTX = 16384
 
 
 def verdicts_path(year: int) -> Path:
-    return DATA_PROCESSED / f"verdicts{year}.jsonl"
+    DATA_OUT.mkdir(parents=True, exist_ok=True)
+    return DATA_OUT / f"verdicts{year}.jsonl"
 
 
 def expand(spec: str) -> set[str]:

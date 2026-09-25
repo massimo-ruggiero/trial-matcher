@@ -7,6 +7,15 @@ from enum import StrEnum
 NAMESPACE = uuid.UUID("6f1e2a3c-4b5d-4e6f-8a9b-0c1d2e3f4a5b")
 
 
+class Mode(StrEnum):
+    """Which ranking to produce. The single-signal modes are the baselines the
+    hybrid one has to beat."""
+
+    DENSE = "dense"
+    BM25 = "bm25"
+    HYBRID = "hybrid"
+
+
 class Kind(StrEnum):
     INCLUSION = "inclusion"
     EXCLUSION = "exclusion"

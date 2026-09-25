@@ -5,12 +5,11 @@ import pytrec_eval
 import typer
 from tqdm import tqdm
 
-from src.config import DATA_PROCESSED, DATA_RAW, DEFAULT_ENCODER
-from src.retrieve.search import Mode, Searcher
+from src.config import DATA_PROCESSED, DATA_RAW, DEFAULT_ENCODER, RUNS
+from src.models import Mode
 
 app = typer.Typer()
 
-RUNS = Path("runs")
 MEASURES = {"ndcg_cut_10", "recall_1000", "P_10"}
 
 
@@ -33,7 +32,7 @@ def eligible_only(qrels: dict[str, dict[str, int]]) -> dict[str, dict[str, int]]
     return {t: {d: int(j == 2) for d, j in docs.items()} for t, docs in qrels.items()}
 
 
-def write_run(searcher: Searcher, topics: list[dict], mode: Mode, limit: int, name: str) -> Path:
+def write_run(searcher, topics: list[dict], mode: Mode, limit: int, name: str) -> Path:
     RUNS.mkdir(exist_ok=True)
     path = RUNS / f"{name}.txt"
     with open(path, "w") as f:
@@ -71,6 +70,10 @@ def main(
     encoder: str = DEFAULT_ENCODER,
     prefix: bool = True,
 ) -> None:
+    # Imported here: everything above this function reads files, and only
+    # producing a run needs the encoder.
+    from src.retrieve.search import Searcher
+
     topics = load_topics(year)
     qrels = load_qrels(year)
     binary = eligible_only(qrels)
