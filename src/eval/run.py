@@ -1,7 +1,6 @@
 import json
 from pathlib import Path
 
-import pytrec_eval
 import typer
 from tqdm import tqdm
 
@@ -48,6 +47,10 @@ def write_run(searcher, topics: list[dict], mode: Mode, limit: int, name: str) -
 
 
 def evaluate(run: dict, qrels: dict, measures: set[str]) -> dict[str, float]:
+    # Imported here, like the encoder above: judging criteria reads run files and
+    # topics, and should not have to install an evaluation library to do it.
+    import pytrec_eval
+
     per_topic = pytrec_eval.RelevanceEvaluator(qrels, measures).evaluate(run)
     names = next(iter(per_topic.values())).keys()
     return {m: sum(t[m] for t in per_topic.values()) / len(per_topic) for m in names}
@@ -72,6 +75,8 @@ def main(
 ) -> None:
     # Imported here: everything above this function reads files, and only
     # producing a run needs the encoder.
+    import pytrec_eval
+
     from src.retrieve.search import Searcher
 
     topics = load_topics(year)
