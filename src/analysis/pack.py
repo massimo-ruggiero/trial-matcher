@@ -9,7 +9,7 @@ from pathlib import Path
 import typer
 
 from src.assess.judge import expand, load_shortlist
-from src.config import DATA_PROCESSED, RUNS
+from src.config import DATA_PROCESSED, ROOT, RUNS
 
 app = typer.Typer()
 
@@ -65,6 +65,15 @@ def main(
                 g.write(line)
                 found += 1
 
+    # The code travels with the data: this repository is private, and a notebook
+    # has no credential to clone it with. 74 KB of Python.
+    shutil.copytree(
+        ROOT / "src",
+        out / "src",
+        dirs_exist_ok=True,
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+    )
+
     topics_file = processed / f"topics{year}.jsonl"
     topics_file.write_text((DATA_PROCESSED / f"topics{year}.jsonl").read_text())
 
@@ -75,6 +84,7 @@ def main(
     print(f"judge calls per model: {kept}\n")
     for path in sorted(out.rglob("*.jsonl")) + sorted(out.rglob("*.txt")):
         print(megabytes(path))
+    print(f"{sum(1 for _ in (out / 'src').rglob('*.py')):>9} .py  src/")
 
     if archive:
         # One file to drag into Kaggle's dataset form, which unzips it and

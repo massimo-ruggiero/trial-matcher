@@ -173,14 +173,22 @@ trial in lista, circa 2 MB invece di 239:
 uv run python -m src.analysis.pack --topics 12-31 --depth 20
 ```
 
-Produce anche `kaggle/pack.zip` (0,6 MB), che si trascina in *New Dataset* su
-Kaggle: lo estrae mantenendo le cartelle. Il nome del dataset è indifferente,
-il notebook cerca i file per nome.
+Il pacchetto contiene anche `src/` — 74 KB di Python — perché questo repository
+è privato e un notebook non ha credenziali per clonarlo: un `git clone` via
+https resterebbe fermo ad aspettare una password che nessuno digiterà. Se il
+repository diventa pubblico, si può clonare e saltare questa parte.
 
-Il notebook si apre da *Import Notebook → GitHub*, scegliendo questo repository
-e `kaggle/judge_ablation.ipynb`. Clona il repo, installa Ollama e giudica la
-stessa shortlist con ogni modello. Servono **GPU T4 x2** e **internet attivo**
-nelle impostazioni.
+Produce `kaggle/pack.zip` (0,6 MB), che si trascina in *New Dataset* su Kaggle:
+lo estrae mantenendo le cartelle. Il nome del dataset è indifferente, il
+notebook cerca i file per nome.
+
+Il notebook si carica da *Import Notebook*, prendendo `kaggle/judge_ablation.ipynb`
+da qui. Installa Ollama e giudica la stessa shortlist con ogni modello. Servono
+**GPU T4 x2** e **internet attivo** nelle impostazioni.
+
+Il codice viaggia con i dati, quindi **una modifica locale arriva su Kaggle solo
+ricostruendo il pacchetto**. Il riepilogo stampato dal giudice riporta la
+versione del prompt: serve anche a riconoscere una copia vecchia.
 
 La prima esecuzione ha `SMOKE = True`: un topic, un trial, pochi minuti, per
 verificare che i modelli si carichino e che i verdetti finiscano dove devono.
