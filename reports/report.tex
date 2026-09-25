@@ -1,0 +1,1152 @@
+\documentclass[pdflatex,sn-mathphys-num]{sn-jnl}
+
+% --- Pacchetti ---
+\usepackage[italian]{babel}
+\usepackage{graphicx}
+\usepackage{multirow}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{amsthm}
+\usepackage{mathrsfs}
+\usepackage[title]{appendix}
+\usepackage{xcolor}
+\usepackage{textcomp}
+\usepackage{manyfoot}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{float}
+\usepackage{algorithm}
+\usepackage{algorithmicx}
+\usepackage{algpseudocode}
+\usepackage{listings}
+\usepackage{mathtools}
+\usepackage{comment}
+\usepackage{dsfont}
+\usepackage[font=small, labelfont=bf]{caption}
+
+% --- Configurazione Elenchi ---
+\renewcommand{\labelenumi}{\textit{\arabic*}.}
+
+% --- Stili Listings (Codice) ---
+\lstdefinestyle{promptstyle}{%
+  basicstyle=\ttfamily\footnotesize,
+  breaklines=true,
+  breakautoindent=false,
+  columns=fullflexible,
+  keepspaces=true,
+  frame=single,
+  framesep=8pt,
+  xleftmargin=10pt,
+  xrightmargin=4pt,
+  aboveskip=1em,
+  belowskip=1em,
+}
+
+\lstdefinestyle{Python}{
+  language=Python,
+  basicstyle=\ttfamily\footnotesize,
+  keywordstyle=\color{blue}\bfseries,
+  stringstyle=\color{red},
+  commentstyle=\color{gray}\itshape,
+  breaklines=true,
+  showstringspaces=false,
+  tabsize=4,
+  aboveskip=0pt,
+  belowskip=0pt
+}
+
+% --- Teoremi e Ambienti ---
+\theoremstyle{thmstyleone}
+\newtheorem{theorem}{Theorem}
+\newtheorem{proposition}[theorem]{Proposition}
+
+\theoremstyle{thmstyletwo}
+\newtheorem{example}{Example}
+\newtheorem{remark}{Remark}
+
+\theoremstyle{thmstylethree}
+\newtheorem{definition}{Definition}
+
+\raggedbottom
+
+% --- Comandi Personalizzati ---
+\newcommand{\ev}[1]{\textcolor{red}{#1}}
+\newcommand{\evb}[1]{\textcolor{blue}{#1}}
+\newcommand{\vect}[1]{\boldsymbol{#1}}
+
+% Segnaposto per le figure ancora da produrre: si compila senza file esterni.
+\newcommand{\draftfig}[2][0.85\textwidth]{%
+  \fbox{\parbox[c][4.5cm][c]{#1}{\centering\ev{[FIGURA DA PRODURRE]}\\[0.6em]\small #2}}%
+}
+
+% =========================================================
+% Inizio Documento
+% =========================================================
+\begin{document}
+
+\title[Trial Matcher]{Trial Matcher: recupero denso e verifica dei criteri di eleggibilità per l'arruolamento in trial clinici}
+
+\author*[1]{\fnm{Massimo} \sur{Ruggiero}}\email{\ev{email}}
+\author[1]{\fnm{\ev{Nome}} \sur{\ev{Cognome}}}\email{\ev{email}}
+\author[1]{\fnm{\ev{Nome}} \sur{\ev{Cognome}}}\email{\ev{email}}
+
+\affil[1]{\orgdiv{\ev{Dipartimento}}, \orgname{\ev{Università}}, \orgaddress{\city{\ev{Città}}, \country{Italia}}}
+
+\abstract{Data la nota di ammissione di un paziente, il problema dell'arruolamento in trial clinici consiste nel trovare, fra centinaia di migliaia di studi, quelli per cui quel paziente è effettivamente eleggibile. La difficoltà non sta nel recuperare studi che parlano della sua malattia, compito che un motore di ricerca semantico assolve bene, ma nel distinguere gli studi adatti da quelli che il paziente \emph{non può} fare perché viola un criterio di esclusione. Nei giudizi di rilevanza della collezione TREC Clinical Trials questi ultimi costituiscono una classe a sé e, nell'edizione 2021, sono più numerosi di quelli eleggibili. Un sistema di recupero non è in grado di separarli, perché un trial escluso somiglia alla nota del paziente quanto uno adatto.
+
+Proponiamo un'architettura in due fasi. La prima recupera una lista di candidati con ricerca densa su un indice vettoriale; la seconda sottopone ogni candidato a un modello linguistico locale che verifica i criteri di eleggibilità uno per uno, obbligato a citare alla lettera il passaggio della nota che sostiene ogni verdetto, e riordina la lista in base all'esito. Ogni scelta di progetto è stata decisa da un esperimento controllato sul \emph{development set}: la selezione dell'encoder attraverso un'ablation fattoriale dominio~$\times$~taglia, la scelta del modello giudice attraverso un confronto appaiato fra un modello generale e il suo fine-tune medico a parità di base, taglia e quantizzazione.
+
+\ev{Sintesi dei risultati numerici: guadagno della seconda fase su nDCG@10 ristretto agli eleggibili, riduzione di excl@10, esito del confronto fra giudici, risultato sul test set 2022.}}
+
+\keywords{recupero dell'informazione, trial clinici, recupero denso, modelli linguistici, TREC}
+
+\maketitle
+
+% =========================================================
+\section{Introduzione}\label{sec:intro}
+
+\subsection{Il problema}\label{sec:problema}
+
+L'arruolamento dei pazienti è uno dei colli di bottiglia della ricerca clinica: una quota rilevante degli studi non raggiunge il numero di partecipanti previsto, e la ricerca manuale di uno studio adatto a un singolo paziente richiede di leggere i criteri di eleggibilità di decine di candidati. Il compito, formulato come problema di recupero dell'informazione, è il seguente: data una descrizione testuale del paziente, tipicamente una nota di ammissione, produrre una lista ordinata di studi clinici in cui quelli per cui il paziente è eleggibile compaiano il più in alto possibile.
+
+La collezione \emph{TREC Clinical Trials} \cite{trecct2021,trecct2022} fornisce il banco di prova standard per questo compito: un corpus di $375\,580$ studi estratti da \texttt{ClinicalTrials.gov}, un insieme di descrizioni sintetiche di pazienti e, per ciascuna di esse, giudizi di rilevanza prodotti da personale con formazione medica.
+
+\subsection{Perché non è soltanto un problema di ricerca}\label{sec:tesi}
+
+La peculiarità della collezione, e il punto di partenza di questo lavoro, è che i giudizi non sono binari ma hanno \emph{tre} livelli:
+
+\begin{description}
+  \item[2 --- eleggibile] il paziente soddisfa i criteri dello studio;
+  \item[1 --- escluso] il paziente ha la condizione di cui lo studio si occupa, ma \emph{viola un criterio di esclusione}: una terapia già effettuata, un'età fuori intervallo, una patologia concomitante;
+  \item[0 --- non rilevante] lo studio non riguarda questo paziente.
+\end{description}
+
+La classe intermedia è quella interessante. Un trial \emph{escluso} condivide con la nota del paziente la malattia, i farmaci, il vocabolario clinico: nello spazio semantico in cui opera un motore di ricerca è vicino alla query quanto uno studio adatto, e spesso di più. Nessuna rappresentazione puramente distribuzionale del testo può separarli, perché la differenza non è di argomento ma di \emph{compatibilità logica} fra una condizione del paziente e un vincolo dello studio.
+
+La Tabella~\ref{tab:qrels} quantifica il fenomeno.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lrrrr}
+\toprule
+Edizione & Topic & Eleggibili & Esclusi & Non rilevanti \\
+\midrule
+2021 & 75 & $5\,570$ & $\mathbf{6\,019}$ & $24\,243$ \\
+2022 & 50 & $3\,939$ & $3\,036$ & $28\,419$ \\
+\bottomrule
+\end{tabular}
+\caption{Distribuzione dei giudizi di rilevanza nelle due edizioni della collezione. Nel 2021 gli studi che \emph{escludono} il paziente sono più numerosi di quelli per cui è eleggibile; nel 2022 il rapporto si inverte. Totale delle coppie giudicate: $35\,832$ nel 2021, $35\,394$ nel 2022.}
+\label{tab:qrels}
+\end{table}
+
+Nel 2021 il sistema che ordina bene per somiglianza semantica ottiene, nelle prime posizioni, più studi che il paziente non può fare che studi adatti. È questa osservazione a motivare una seconda fase di verifica esplicita, e a rendere insufficiente la metrica standard: se i giudizi graduati assegnano un guadagno positivo anche alla classe \emph{escluso}, la misura premia proprio l'errore che vogliamo correggere.
+
+\subsection{Contributi}\label{sec:contributi}
+
+Il lavoro presenta:
+
+\begin{itemize}
+  \item un'architettura in due fasi, recupero denso seguito da verifica criterio per criterio con un modello linguistico eseguito localmente, in cui ogni verdetto deve essere sostenuto da una citazione letterale della nota, verificata automaticamente;
+  \item una valutazione che distingue esplicitamente la classe \emph{escluso}, attraverso metriche standard ristrette agli eleggibili e attraverso tre misure introdotte qui (Sezione~\ref{sec:metriche-nostre});
+  \item tre ablation controllate: encoder (dominio~$\times$~taglia), modello giudice (generale contro fine-tune medico a parità di base e taglia), schema di aggregazione dei verdetti;
+  \item un'analisi della potenza statistica del disegno sperimentale, che motiva quantitativamente il numero di topic e la profondità della lista sottoposta a verifica;
+  \item un'interfaccia che rende ispezionabile ogni verdetto, mostrando il passaggio della nota su cui si fonda.
+\end{itemize}
+
+\subsection{Struttura del documento}\label{sec:struttura}
+
+La Sezione~\ref{sec:fondamenti} raccoglie i fondamenti teorici delle tecniche impiegate, limitatamente a ciò che serve a motivare una scelta effettivamente compiuta. La Sezione~\ref{sec:sistema} descrive il sistema. La Sezione~\ref{sec:setup} definisce il protocollo sperimentale e la metodologia statistica. La Sezione~\ref{sec:risultati} riporta i risultati, la Sezione~\ref{sec:discussione} li discute, la Sezione~\ref{sec:conclusioni} conclude.
+
+% =========================================================
+\section{Fondamenti}\label{sec:fondamenti}
+
+\subsection{Recupero denso}\label{sec:denso}
+
+Sia $\mathcal{C} = \{d_1, \dots, d_N\}$ il corpus e $q$ una query. Un modello \emph{bi-encoder} definisce una funzione
+\begin{equation}
+  \varphi : \mathcal{T} \longrightarrow \mathbb{R}^{k},
+  \label{eq:encoder}
+\end{equation}
+che mappa un testo in un vettore di dimensione $k$, addestrata in modo che testi semanticamente affini abbiano rappresentazioni vicine \cite{reimers2019sbert,karpukhin2020dpr}. La rilevanza è stimata dalla similarità del coseno
+\begin{equation}
+  s(q,d) \;=\; \cos\big(\varphi(q), \varphi(d)\big) \;=\; \frac{\langle \varphi(q), \varphi(d)\rangle}{\lVert \varphi(q)\rVert_2 \; \lVert \varphi(d)\rVert_2}.
+  \label{eq:cosine}
+\end{equation}
+
+Se i vettori sono normalizzati in norma $\ell_2$, cioè $\lVert \varphi(\cdot)\rVert_2 = 1$, la \eqref{eq:cosine} si riduce al prodotto scalare $\langle \varphi(q), \varphi(d)\rangle$, e l'ordinamento per coseno coincide con quello per distanza euclidea. La normalizzazione va applicata in modo identico in indicizzazione e in interrogazione: se le due fasi non concordano, la similarità calcolata dall'indice non è più il coseno e l'ordinamento perde significato.
+
+Il vantaggio del bi-encoder è che $\varphi(d)$ si calcola una volta sola, in fase di indicizzazione, e a tempo di query resta da codificare la sola $q$. Il costo è che query e documento non si vedono mai durante il calcolo del punteggio: nessuna interazione fra i termini dell'una e dell'altro, a differenza di un \emph{cross-encoder}.
+
+\paragraph{Asimmetria fra query e documento.} Alcune famiglie di encoder, fra cui \textsc{bge} \cite{xiao2024cpack}, sono addestrate in modo asimmetrico: la query viene preceduta da una breve istruzione in linguaggio naturale, il documento no. Ignorare questa convenzione, o applicarla al lato sbagliato, degrada il recupero; la Sezione~\ref{sec:res-prefisso} ne misura l'effetto sul nostro compito.
+
+\subsection{Recupero lessicale: BM25}\label{sec:bm25}
+
+Il modello probabilistico BM25 \cite{robertson2009bm25} assegna a una coppia $(q,d)$ il punteggio
+\begin{equation}
+  \mathrm{BM25}(q,d) \;=\; \sum_{t \in q} \mathrm{idf}(t) \cdot \frac{f(t,d)\,\big(k_1 + 1\big)}{f(t,d) + k_1\Big(1 - b + b\,\dfrac{|d|}{\overline{|d|}}\Big)},
+  \label{eq:bm25}
+\end{equation}
+dove $f(t,d)$ è la frequenza del termine $t$ nel documento $d$, $|d|$ la lunghezza del documento, $\overline{|d|}$ la lunghezza media nel corpus, e
+\begin{equation}
+  \mathrm{idf}(t) \;=\; \ln\!\left(\frac{N - n_t + 0{,}5}{n_t + 0{,}5} + 1\right),
+  \label{eq:idf}
+\end{equation}
+con $n_t$ numero di documenti che contengono $t$. I due iperparametri governano fenomeni distinti: $k_1$ regola la \emph{saturazione}, cioè quanto rapidamente il contributo di un termine smette di crescere al crescere della sua frequenza, e $b \in [0,1]$ la \emph{normalizzazione per lunghezza}, cioè quanto un documento lungo viene penalizzato.
+
+Due osservazioni rilevanti per l'implementazione. La prima: saturazione e normalizzazione riguardano il \emph{documento}, non la query; la query contribuisce soltanto con l'insieme dei suoi termini e i rispettivi $\mathrm{idf}$. La seconda: l'$\mathrm{idf}$ della \eqref{eq:idf} è una statistica globale del corpus, e non può quindi essere incorporata nella rappresentazione di un singolo documento al momento in cui questo viene indicizzato --- deve essere calcolata dal sistema che possiede l'intera collezione (Sezione~\ref{sec:qdrant}).
+
+BM25 e recupero denso falliscono in modo complementare. Il primo non riconosce che \emph{myocardial infarction} e \emph{heart attack} sono la stessa cosa; il secondo può non distinguere un dosaggio da un altro, o perdere un codice alfanumerico che compare identico nella query e nel documento.
+
+\subsection{Fusione di liste: Reciprocal Rank Fusion}\label{sec:rrf}
+
+Siano $R_1, \dots, R_m$ liste ordinate prodotte da sistemi diversi sullo stesso insieme di documenti, e $\mathrm{rank}_i(d)$ la posizione di $d$ nella lista $i$-esima. La \emph{Reciprocal Rank Fusion} \cite{cormack2009rrf} assegna
+\begin{equation}
+  \mathrm{RRF}(d) \;=\; \sum_{i=1}^{m} \frac{1}{\kappa + \mathrm{rank}_i(d)},
+  \label{eq:rrf}
+\end{equation}
+e riordina per punteggio decrescente.
+
+Due proprietà giustificano la scelta di questo metodo rispetto a una combinazione lineare dei punteggi. Anzitutto la \eqref{eq:rrf} usa soltanto le \emph{posizioni}: i punteggi dei due sistemi vivono su scale incomparabili, il coseno in $[-1,1]$ e il BM25 su un supporto non limitato che dipende dalla collezione, e normalizzarli richiederebbe assunzioni arbitrarie sulla loro distribuzione. In secondo luogo la costante $\kappa$ controlla quanto rapidamente decade il contributo di una posizione: un $\kappa$ piccolo rende il primo posto dominante, mentre un $\kappa$ grande appiattisce il decadimento e fa sì che un documento presente a metà classifica in \emph{entrambe} le liste superi un documento primo in una sola. È il premio all'accordo fra i sistemi, ed è il meccanismo per cui la fusione può battere i suoi componenti. Il valore $\kappa = 60$ è quello proposto nel lavoro originale; la Sezione~\ref{sec:res-rrf} mostra quanto costa sostituirlo con $\kappa = 1$.
+
+\subsection{Basi di dati vettoriali e Qdrant}\label{sec:qdrant}
+
+Il recupero denso riduce la ricerca a un problema di \emph{nearest neighbour} in $\mathbb{R}^k$: dato $\varphi(q)$, trovare i $\ell$ documenti a coseno massimo. Il calcolo esatto richiede $\mathcal{O}(Nk)$ operazioni per query, praticamente $144$ milioni di moltiplicazioni per una collezione da $375\,580$ documenti a $384$ dimensioni: sostenibile per una valutazione in batch, non per un servizio interattivo.
+
+\paragraph{HNSW.} La struttura dati standard per l'approssimazione è \emph{Hierarchical Navigable Small World} \cite{malkov2020hnsw}. L'idea è costruire un grafo a più livelli in cui ogni nodo è un vettore e gli archi collegano vettori vicini. Il livello più alto contiene pochi nodi con archi lunghi, che permettono di attraversare rapidamente lo spazio; scendendo, i livelli diventano progressivamente più densi e gli archi più corti. La ricerca parte da un punto di ingresso nel livello superiore, procede con una discesa greedy verso il vicino più prossimo alla query, e usa il nodo raggiunto come punto di ingresso per il livello sottostante. Due parametri governano il compromesso: $m$, il numero di archi per nodo, che determina occupazione di memoria e qualità del grafo, ed $\mathrm{ef}$, l'ampiezza della lista dei candidati mantenuta durante la visita, che a tempo di query scambia latenza contro richiamo. Il risultato è una ricerca in tempo logaritmico nella dimensione della collezione, al prezzo di un richiamo inferiore a $1$: alcuni veri vicini possono non essere trovati.
+
+\paragraph{Modalità locale.} Qdrant \cite{qdrant} può essere usato come servizio separato oppure, come nel nostro caso, \emph{in-process}: nessun server, l'indice è una directory su disco aperta dalla libreria client. In questa modalità non viene costruito alcun grafo HNSW; all'apertura tutti i vettori della collezione vengono deserializzati e caricati in memoria come array \textsc{numpy}, e ogni ricerca è un prodotto matrice-vettore esatto. Le conseguenze sono due, entrambe misurate nella Sezione~\ref{sec:res-costi}: il richiamo dell'indice è esattamente $1$, perché non c'è approssimazione, ma il costo si sposta interamente sull'apertura, che è proporzionale alla dimensione della collezione e viene pagata a ogni avvio del processo.
+
+\paragraph{Vettori con nome.} Un \emph{punto} di Qdrant può contenere più vettori distinti, identificati da un nome. Indicizzare la rappresentazione densa e quella sparsa come due vettori dello stesso punto, anziché come due collezioni separate, ha una conseguenza pratica non banale: un'unica operazione di scrittura mantiene le due rappresentazioni allineate per costruzione, e nessuna delle due può restare indietro rispetto all'altra in caso di aggiornamento parziale.
+
+\paragraph{Il modificatore IDF.} Come osservato nella Sezione~\ref{sec:bm25}, l'$\mathrm{idf}$ è una statistica globale. Il vettore sparso che rappresenta un documento può quindi contenere soltanto le frequenze dei termini; il fattore $\mathrm{idf}(t)$ va applicato dal motore al momento del confronto. Qdrant lo esprime dichiarando la collezione sparsa con il modificatore \texttt{IDF}, che istruisce il motore a mantenere le frequenze documentali e a completare la \eqref{eq:bm25} in fase di ricerca.
+
+\paragraph{Identificatori deterministici.} L'identificatore di un punto è derivato dal codice dello studio tramite
+\begin{equation}
+  \mathrm{id}(d) \;=\; \mathrm{uuid5}\big(\mathcal{N}, \texttt{nct\_id}(d)\big),
+  \label{eq:uuid5}
+\end{equation}
+dove $\mathcal{N}$ è uno spazio di nomi fissato e $\mathrm{uuid5}$ è la funzione che produce un UUID come digest SHA-1 della coppia. Poiché la funzione è deterministica, lo stesso studio riceve sempre lo stesso identificatore: una scrittura ripetuta lo \emph{sovrascrive} invece di duplicarlo. L'indicizzazione diventa così idempotente e può essere interrotta e ripresa senza controlli aggiuntivi.
+
+\paragraph{Una collezione per encoder.} Gli indici costruiti con encoder diversi risiedono in collezioni con nomi distinti. La precauzione non è cosmetica: due encoder della stessa larghezza --- per esempio \textsc{bge-small} e \textsc{MedEmbed-small}, entrambi a $384$ dimensioni --- producono vettori perfettamente compatibili dal punto di vista del motore, che accetterebbe quindi una query prodotta da un modello contro un indice costruito da un altro \emph{senza sollevare alcun errore}, restituendo risultati privi di senso ma plausibili.
+
+\subsection{Misure di efficacia}\label{sec:metriche}
+
+\subsubsection{Metriche standard}\label{sec:metriche-standard}
+
+Sia $R_k(q) = (d_1, \dots, d_k)$ la lista dei primi $k$ documenti restituiti per la query $q$, e $y(q,d) \in \{0,1,2\}$ il giudizio di rilevanza. La \emph{precisione} e il \emph{richiamo} a profondità $k$ sono
+\begin{equation}
+  \mathrm{P@}k(q) = \frac{1}{k}\big|\{d \in R_k(q) : y(q,d) > 0\}\big|,
+  \qquad
+  \mathrm{R@}k(q) = \frac{\big|\{d \in R_k(q) : y(q,d) > 0\}\big|}{\big|\{d \in \mathcal{C} : y(q,d) > 0\}\big|}.
+  \label{eq:precrec}
+\end{equation}
+
+Il \emph{Discounted Cumulative Gain} \cite{jarvelin2002ndcg} tiene conto sia del grado di rilevanza sia della posizione:
+\begin{equation}
+  \mathrm{DCG@}k(q) \;=\; \sum_{i=1}^{k} \frac{g\big(y(q,d_i)\big)}{\log_2(i+1)},
+  \label{eq:dcg}
+\end{equation}
+dove $g(\cdot)$ è la funzione di guadagno e il denominatore è lo sconto di posizione. La normalizzazione
+\begin{equation}
+  \mathrm{nDCG@}k(q) \;=\; \frac{\mathrm{DCG@}k(q)}{\mathrm{IDCG@}k(q)}
+  \label{eq:ndcg}
+\end{equation}
+divide per il valore ottenuto dall'ordinamento ideale, cioè quello che dispone i documenti per giudizio decrescente, e riporta la misura in $[0,1]$ rendendo confrontabili topic con numero di documenti rilevanti diverso.
+
+\begin{remark}
+La scelta di $g$ non è univoca. La convenzione adottata da \texttt{trec\_eval} --- e quindi dalla libreria \texttt{pytrec\_eval} \cite{vangysel2018pytreceval} che impieghiamo --- è il guadagno \emph{lineare} $g(y) = y$, non quello esponenziale $g(y) = 2^{y}-1$ diffuso in altri contesti. La differenza non è trascurabile su giudizi a tre livelli: con guadagno lineare un documento eleggibile vale il doppio di uno escluso, con guadagno esponenziale il triplo.
+\end{remark}
+
+\paragraph{La variante ristretta agli eleggibili.} Il punto discusso nella Sezione~\ref{sec:tesi} si traduce in una scelta di valutazione precisa. Applicando la \eqref{eq:ndcg} ai giudizi originali, un trial \emph{escluso} ($y=1$) contribuisce con guadagno positivo: la metrica premia il sistema che lo colloca in alto, cioè proprio l'errore che la seconda fase deve correggere. Definiamo quindi la mappa
+\begin{equation}
+  y^{*}(q,d) \;=\; \mathds{1}\big[y(q,d) = 2\big],
+  \label{eq:binaria}
+\end{equation}
+che tratta come rilevanti i soli studi eleggibili e degrada gli esclusi al rango dei non rilevanti. Indichiamo con l'asterisco le metriche calcolate su $y^{*}$: $\mathrm{nDCG@}10^{*}$, $\mathrm{P@}10^{*}$. Riportiamo sistematicamente entrambe le viste, perché la distanza fra le due misura quanto un sistema si appoggia alla classe intermedia.
+
+\paragraph{Giudizi incompleti.} I giudizi TREC sono prodotti per \emph{pooling}: vengono valutati soltanto i documenti che almeno uno dei sistemi partecipanti ha collocato in alto. I documenti fuori dal pool non sono giudicati non rilevanti, sono \emph{non giudicati}, ma \texttt{trec\_eval} li tratta come non rilevanti. Su un indice che contenga l'intero corpus la distinzione conta, e la misura appropriata è \emph{bpref} \cite{buckley2004bpref}, che considera i soli documenti giudicati:
+\begin{equation}
+  \mathrm{bpref}(q) \;=\; \frac{1}{|\mathcal{R}|}\sum_{r \in \mathcal{R}} \left(1 - \frac{\big|\{n \in \mathcal{N}_{|\mathcal{R}|} : n \text{ precede } r\}\big|}{\min\big(|\mathcal{R}|, |\mathcal{N}|\big)}\right),
+  \label{eq:bpref}
+\end{equation}
+dove $\mathcal{R}$ è l'insieme dei rilevanti giudicati e $\mathcal{N}$ quello dei non rilevanti giudicati.
+
+\subsubsection{Metriche introdotte in questo lavoro}\label{sec:metriche-nostre}
+
+Nessuna misura standard cattura direttamente l'obiettivo dichiarato nella Sezione~\ref{sec:tesi}. Introduciamo tre quantità, ciascuna motivata da una domanda che le metriche precedenti lasciano senza risposta.
+
+\paragraph{Esclusi nelle prime posizioni.} Quanti studi che \emph{respingono} il paziente stiamo mostrando al medico?
+\begin{equation}
+  \mathrm{excl@}k \;=\; \frac{1}{|\mathcal{Q}|}\sum_{q \in \mathcal{Q}} \big|\{d \in R_k(q) : y(q,d) = 1\}\big|.
+  \label{eq:exclk}
+\end{equation}
+È un conteggio, non una frazione, e si legge come "numero medio di studi inutilizzabili fra i primi $k$". La seconda fase ha successo nella misura in cui lo riduce.
+
+\paragraph{Utilità netta.} La \eqref{eq:ndcg} attribuisce guadagni non negativi per costruzione: nel migliore dei casi un trial escluso "non aiuta", mai "fa danno". Nella nostra applicazione invece consuma il tempo del medico e va quindi conteggiato con segno opposto:
+\begin{equation}
+  \mathrm{utility@}k \;=\; \frac{1}{|\mathcal{Q}|}\sum_{q \in \mathcal{Q}} \frac{\big|\{d \in R_k(q): y = 2\}\big| - \big|\{d \in R_k(q): y = 1\}\big|}{k}.
+  \label{eq:utility}
+\end{equation}
+La misura assume valori in $[-1,1]$; è negativa quando le prime $k$ posizioni contengono più studi che respingono il paziente che studi adatti.
+
+\paragraph{Tasso di esclusione errata.} I due errori della seconda fase non sono simmetrici. Trattenere in lista uno studio escluso produce rumore che il medico filtra leggendo i criteri; \emph{rimuovere} dalla lista uno studio per cui il paziente era eleggibile gli sottrae un'opportunità, e lo fa in silenzio. Detta $\hat{\ell}(q,d)$ l'etichetta predetta dal sistema (Sezione~\ref{sec:aggregazione}), definiamo
+\begin{equation}
+  \mathrm{FER} \;=\; \Pr\!\big[\hat{\ell} = \textsc{excluded} \;\big|\; y = 2\big],
+  \label{eq:fer}
+\end{equation}
+stimata come frequenza sulla matrice di confusione. È la misura del danno che il sistema può causare da solo, e va riportata accanto al richiamo sugli esclusi, che ne è la controparte benefica.
+
+\subsection{Modelli linguistici come giudici}\label{sec:llm}
+
+La seconda fase impiega un modello linguistico autoregressivo eseguito localmente. Tre aspetti tecnici incidono direttamente sul progetto.
+
+\paragraph{Decodifica vincolata.} Il modello non deve produrre prosa ma una struttura dati. Fornendo al motore di inferenza uno schema JSON, questo viene compilato in una grammatica formale che vincola, a ogni passo di decodifica, l'insieme dei token ammissibili: i token che violerebbero la grammatica ricevono probabilità nulla. L'output è quindi sintatticamente valido per costruzione, e non serve alcun \emph{parsing} difensivo.
+
+La conseguenza meno ovvia, e quella che ha guidato il nostro progetto, è che \emph{l'ordine dei campi nello schema è l'ordine di generazione}. Un campo generato per primo è visibile, come contesto, a tutti quelli che seguono; l'inverso non vale. Chiedere le citazioni \emph{prima} del verdetto obbliga dunque il modello a cercare le prove prima di decidere; l'ordine opposto produrrebbe una giustificazione a posteriori di una decisione già presa.
+
+\paragraph{Quantizzazione.} I pesi vengono memorizzati a precisione ridotta, tipicamente $4$ bit per parametro con schemi a blocchi che conservano per ciascun blocco un fattore di scala. Un modello da $27$ miliardi di parametri passa così da oltre $50$ GB a circa $17$ GB, entrando nella memoria di acceleratori accessibili. La generazione autoregressiva è limitata dalla banda di memoria più che dal calcolo --- a ogni token vanno letti tutti i pesi --- quindi la quantizzazione agisce anche, e soprattutto, sulla velocità.
+
+\paragraph{Finestra di contesto.} I blocchi di criteri possono superare i duemila token. Il motore di inferenza tronca silenziosamente i prompt che eccedono la finestra configurata: la fissiamo esplicitamente a $16\,384$ token e verifichiamo, per ogni chiamata, che la somma dei token in ingresso e in uscita resti sotto quella soglia.
+
+\subsection{Adattamento al dominio medico}\label{sec:finetuning}
+
+\subsubsection{Tassonomia delle tecniche}\label{sec:tecniche-ft}
+
+Le strategie con cui un modello generale viene specializzato su un dominio si possono ordinare per stadio di intervento.
+
+\begin{description}
+  \item[Continued pretraining] si prosegue l'addestramento non supervisionato del modello di base su un corpus di dominio, tipicamente miliardi di token di letteratura e linee guida. Inietta conoscenza ma non modifica il formato delle risposte.
+  \item[Instruction tuning] fine-tuning supervisionato su coppie istruzione--risposta di dominio. Modifica il comportamento, ed è lo stadio in cui si può perdere l'obbedienza a istruzioni diverse da quelle viste.
+  \item[Distillazione] \cite{hinton2015distilling} il modello studente è addestrato a riprodurre la distribuzione di probabilità di un modello insegnante più grande, anziché soltanto la risposta corretta; il segnale è più ricco di quello di un'etichetta secca.
+  \item[Allineamento per preferenze] a partire da coppie di risposte ordinate per preferenza umana. La \emph{Direct Preference Optimization} \cite{rafailov2023dpo} ottimizza direttamente la politica su tali coppie, evitando l'addestramento di un modello di ricompensa esplicito.
+  \item[Adattamento a basso rango] \cite{hu2022lora} si congelano i pesi originali e si apprende una perturbazione $\Delta W = BA$ con $B \in \mathbb{R}^{d \times r}$, $A \in \mathbb{R}^{r \times d}$ e $r \ll d$. Riduce drasticamente i parametri addestrabili e limita, senza annullarlo, il disapprendimento.
+  \item[Model merging] i pesi di un modello clinico e di un modello generale istruito vengono interpolati, per recuperare l'obbedienza persa mantenendo la conoscenza acquisita.
+\end{description}
+
+\subsubsection{I modelli considerati}\label{sec:modelli-considerati}
+
+La Tabella~\ref{tab:modelli-medici} riassume le ricette dei principali modelli aperti specializzati in medicina.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{llp{6.6cm}}
+\toprule
+Modello & Base & Tecnica di specializzazione \\
+\midrule
+MedEmbed        & \textsc{bge}    & fine-tuning contrastivo su coppie query--passaggio mediche sintetiche \\
+MedGemma        & Gemma 3         & continued pretraining (dati medici al $10\%$, $\sim 5$ epoche), distillazione da un insegnante istruito su dataset di domande e risposte mediche, reinforcement learning \\
+Meditron        & Llama 2         & continued pretraining su $48$ miliardi di token fra linee guida e letteratura \\
+Med42-v2        & Llama 3         & instruction tuning seguito da allineamento per preferenze \\
+Aloe            & Llama 3         & catene di ragionamento sintetiche, DPO, model merging \\
+OpenBioLLM      & Llama 3         & istruzioni mediche e allineamento per preferenze \\
+\bottomrule
+\end{tabular}
+\caption{Modelli aperti specializzati in ambito medico e tecnica con cui sono stati ottenuti \cite{medgemma2025,chen2023meditron,christophe2024med42,gururajan2024aloe,medembed}. Le due famiglie effettivamente impiegate in questo lavoro sono MedEmbed, come encoder, e MedGemma, come giudice.}
+\label{tab:modelli-medici}
+\end{table}
+
+\subsubsection{Una ipotesi sull'utilità del fine-tuning di dominio}\label{sec:ipotesi-dominio}
+
+Le due ablation di questo lavoro mettono alla prova la stessa famiglia di ipotesi in due punti diversi della pipeline, e ci aspettiamo esiti opposti. La differenza non sta nella qualità dei modelli ma nella relazione fra l'obiettivo con cui sono stati addestrati e il compito che chiediamo loro.
+
+MedEmbed è ottenuto con un fine-tuning \emph{contrastivo} su coppie query--passaggio: l'obiettivo di addestramento è avvicinare nello spazio una domanda clinica al passaggio che la soddisfa, ed è esattamente ciò che gli chiediamo in produzione. L'adattamento agisce sullo stesso compito.
+
+MedGemma, nella sua componente testuale, è distillato su dataset di domande e risposte mediche a scelta multipla. Il compito che gli chiediamo è di natura diversa: leggere un blocco lungo, enumerare esaustivamente i criteri che contiene, copiare alla lettera un passaggio e rispettare uno schema. Non è conoscenza medica da esame, è \emph{obbedienza a un'istruzione} su un testo dato. La letteratura sul disapprendimento catastrofico \cite{french1999catastrophic} osserva che è proprio la capacità di seguire istruzioni a degradarsi durante la specializzazione, al punto che alcune ricette recenti reintroducono per fusione un modello generale allo scopo di recuperarla.
+
+L'ipotesi che sottoponiamo a verifica è quindi: \emph{il fine-tuning di dominio giova quando l'obiettivo di addestramento coincide con il compito d'uso, e può nuocere quando lo sostituisce.} La Sezione~\ref{sec:res-giudici} fornisce l'evidenza sperimentale. \ev{Confermare o smentire alla luce dei risultati.}
+
+% =========================================================
+\section{Sistema}\label{sec:sistema}
+
+\subsection{Panoramica}\label{sec:panoramica}
+
+Il sistema è organizzato in due fasi in cascata. La prima riduce il corpus a una lista di candidati per somiglianza semantica; la seconda sottopone ciascun candidato a una verifica esplicita dei criteri di eleggibilità e riordina la lista in base all'esito.
+
+\begin{figure}[H]
+\centering
+\draftfig{Schema della metodologia: nota del paziente $\rightarrow$ encoder $\rightarrow$ indice Qdrant $\rightarrow$ shortlist di profondità $\delta$ $\rightarrow$ per ogni candidato, blocco dei criteri + nota $\rightarrow$ modello giudice con schema vincolato $\rightarrow$ verdetti per criterio $\rightarrow$ verifica delle citazioni $\rightarrow$ aggregazione in etichetta e punteggio $\rightarrow$ lista riordinata.}
+\caption{Architettura del sistema. La prima fase è responsabile del richiamo, la seconda della precisione: nessun trial assente dalla shortlist può essere recuperato dalla verifica, e nessun trial presente può essere promosso oltre il tetto imposto dal richiamo a profondità $\delta$.}
+\label{fig:architettura}
+\end{figure}
+
+La separazione fra le due fasi ha una conseguenza che attraversa tutto il lavoro: il richiamo a profondità $\delta$ della prima fase è un \emph{tetto} per la seconda. Nessun riordino, per quanto perfetto, può portare nelle prime posizioni uno studio che la ricerca non ha recuperato. La Sezione~\ref{sec:profondita} quantifica questo tetto e lo usa per scegliere $\delta$.
+
+\subsection{Dati}\label{sec:dati}
+
+\paragraph{Corpus.} Gli studi sono documenti XML con struttura eterogenea. Per ciascuno estraiamo il codice identificativo, il titolo, le condizioni trattate, il riassunto sintetico e il blocco testuale dei criteri di eleggibilità. Il documento effettivamente indicizzato è la concatenazione di titolo, condizioni e riassunto:
+\begin{equation}
+  d \;=\; \texttt{title} \,\Vert\, \texttt{conditions} \,\Vert\, \texttt{summary}.
+  \label{eq:documento}
+\end{equation}
+Il blocco dei criteri è deliberatamente \emph{escluso} dalla rappresentazione indicizzata e conservato a parte: contiene principalmente vincoli negativi, la cui presenza nel vettore avvicinerebbe la nota del paziente proprio agli studi che lo escludono. Viene recuperato dal disco nella seconda fase, dove è l'oggetto stesso della verifica.
+
+\paragraph{Sottoinsieme giudicato.} L'indice usato per gli esperimenti contiene i $48\,714$ studi che compaiono almeno una volta nei file di giudizio delle due edizioni, non l'intero corpus. Questa scelta va dichiarata con precisione perché condiziona la lettura di ogni numero riportato: \emph{le metriche su questo sottoinsieme sono gonfiate}, perché mancano i circa $327\,000$ studi che nella realtà competerebbero per le prime posizioni. Sono valide per confrontare sistemi fra loro, in cui l'insieme dei distrattori è identico per tutti, non come stima della prestazione assoluta. La Sezione~\ref{sec:res-corpus} riporta la valutazione sul corpus completo.
+
+\paragraph{Troncamento.} Gli encoder impiegati hanno una finestra di $512$ token e troncano silenziosamente ciò che eccede. Un documento più lungo viene dunque rappresentato dal solo prefisso, senza alcun avviso. \ev{Riportare qui la verifica: coseno fra la codifica del documento intero e quella del troncamento a 512 token, e quota di documenti del corpus oltre la soglia.}
+
+\subsection{Indicizzazione}\label{sec:indicizzazione}
+
+Ogni studio diventa un punto con due vettori con nome: la rappresentazione densa prodotta da $\varphi$, normalizzata in norma $\ell_2$, e quella sparsa di BM25. L'identificatore è quello della \eqref{eq:uuid5}, il che rende la costruzione idempotente. Il \emph{payload} conservato nell'indice è minimale --- il solo codice dello studio --- perché titolo e criteri sono letti dal disco quando servono, e replicarli nell'indice ne moltiplicherebbe l'occupazione in memoria senza vantaggio.
+
+Il prefisso di istruzione discusso nella Sezione~\ref{sec:denso} viene applicato esclusivamente in fase di interrogazione. Applicarlo anche ai documenti equivarrebbe a spostare l'intero corpus nella stessa direzione dello spazio, annullando l'effetto che il prefisso deve produrre.
+
+\subsection{Ricerca}\label{sec:ricerca}
+
+Il sistema espone tre modalità: densa, lessicale e ibrida. Quest'ultima recupera separatamente le due liste e le fonde con la \eqref{eq:rrf}, calcolata dal nostro codice anziché dal motore.
+
+\paragraph{Profondità di prefetch.} La fusione opera su liste di lunghezza $\pi$, indipendente dal numero $\ell$ di risultati richiesti. La scelta non è neutrale: con $\pi$ piccolo la maggior parte dei documenti compare in una sola delle due liste, e la somma della \eqref{eq:rrf} degenera in un singolo addendo. La fusione smette allora di premiare l'accordo fra i sistemi e si riduce a un'unione arbitraria. Fissiamo $\pi = \max(\ell, 500)$.
+
+\subsection{Segmentazione dei criteri}\label{sec:segmentazione}
+
+Il blocco dei criteri è testo semi-strutturato. Un segmentatore basato su regole individua le intestazioni di sezione (\emph{Inclusion Criteria}, \emph{Exclusion Criteria}, con i loro qualificatori) e i marcatori di elenco, attribuendo a ciascun criterio la polarità della sezione in cui si trova; in assenza di marcatori ricade su una segmentazione per frasi con inferenza della polarità da indizi lessicali. Ogni criterio è annotato con la \emph{provenienza} della sua polarità --- dichiarata da un'intestazione, inferita, o assunta per difetto --- così che il costo dell'inferenza sia misurabile.
+
+Il segmentatore \emph{non fa parte} della pipeline di produzione: al modello giudice viene passato il blocco intero, ed è il modello a enumerare i criteri. Due ragioni. La prima è che una quota rilevante degli studi usa intestazioni in stile NCI (\emph{Disease Characteristics}, \emph{Patient Characteristics}) che non dichiarano alcuna polarità, e in quei casi il segmentatore assegna per difetto l'inclusione a tutto il blocco. La seconda è che il modello, ricevendo il testo integrale, ha accesso al contesto che disambigua i casi limite. Il segmentatore resta impiegato per le statistiche sul corpus e come \emph{riferimento di copertura}: il confronto fra il numero di criteri che esso individua e il numero che il modello restituisce è la misura di quanto il modello salta (Sezione~\ref{sec:res-comportamento}).
+
+\subsection{Verifica dei criteri}\label{sec:giudice}
+
+\subsubsection{Schema}\label{sec:schema}
+
+Al modello è imposto uno schema JSON che richiede, per ogni criterio individuato nel blocco, quattro campi nell'ordine seguente:
+
+\begin{description}
+  \item[\texttt{criterion}] il criterio, riassunto in non più di dieci parole;
+  \item[\texttt{kind}] \texttt{inclusion} oppure \texttt{exclusion};
+  \item[\texttt{evidence}] una lista di passaggi della nota, copiati alla lettera;
+  \item[\texttt{rationale}] una frase di motivazione, quando la citazione non basta o non esiste;
+  \item[\texttt{verdict}] \texttt{yes}, \texttt{no} oppure \texttt{unclear}.
+\end{description}
+
+Né il numero dei criteri né la loro polarità sono imposti: il modello li deriva dal blocco, e la copertura viene misurata a posteriori. L'ordine dei campi è la scelta di progetto più importante dello schema, per la ragione esposta nella Sezione~\ref{sec:llm}: citazioni e motivazione precedono il verdetto, quindi il verdetto è generato \emph{condizionatamente} alle prove raccolte.
+
+\subsubsection{Prompt}\label{sec:prompt}
+
+Il prompt di sistema, riportato per intero nell'Appendice~\ref{app:prompt}, codifica quattro regole.
+
+\emph{Esaustività.} Nessun criterio va fuso con un altro o saltato, per quanto lungo sia il blocco.
+
+\emph{Citazione letterale.} I passaggi in \texttt{evidence} vanno copiati carattere per carattere, conservando abbreviazioni, acronimi, maiuscole, punteggiatura e simboli della nota. La regola è formulata in modo simmetrico --- dove la nota scrive \texttt{Pt} si cita \texttt{Pt}, dove scrive \texttt{Patient} si cita \texttt{Patient} --- dopo aver osservato che una formulazione unidirezionale induceva il modello ad abbreviare anche dove la nota non abbreviava.
+
+\emph{Separazione fra citazione e ragionamento.} Un passaggio che non si trova nella nota esattamente come è scritto non è una citazione e va in \texttt{rationale}. Simmetricamente, non si ragiona su un fatto senza citarlo: se la nota lo contiene, il posto di quel fatto è \texttt{evidence}.
+
+\emph{Nessuna inferenza dal silenzio.} Una nota che descrive in dettaglio una condizione non dice nulla su un'altra: ciò che non è menzionato è \texttt{unclear}, mai \texttt{no}. La regola è collocata nella definizione stessa del campo \texttt{verdict}, dopo aver osservato che in fondo al prompt veniva applicata in modo discontinuo.
+
+\begin{remark}
+L'esempio risolto contenuto nel prompt è deliberatamente \emph{inventato} e usa un farmaco fittizio. Un esempio tratto da un topic reale avrebbe tarato il prompt sui dati su cui misuriamo, con una fuga di informazione difficile da quantificare a posteriori.
+\end{remark}
+
+\subsubsection{Versione del prompt e riuso}\label{sec:versione}
+
+Ogni verdetto è salvato con la chiave
+\begin{equation}
+  \chi \;=\; \big(\texttt{topic}, \;\texttt{nct\_id}, \;\texttt{modello}, \;\nu\big),
+  \qquad
+  \nu = \mathrm{SHA256}\big(\texttt{system} \Vert \texttt{user} \Vert \texttt{schema}\big)_{1:8},
+  \label{eq:chiave}
+\end{equation}
+dove $\nu$ è un digest troncato che copre il testo del prompt \emph{e} lo schema. Una modifica a uno qualunque dei due invalida automaticamente la cache, e verdetti prodotti con prompt diversi non possono essere mescolati. La proprietà è ciò che rende praticabile un esperimento distribuito su più macchine: i file dei verdetti si concatenano senza rischio, perché la chiave distingue le configurazioni.
+
+\subsection{Verifica delle citazioni}\label{sec:grounding}
+
+Ogni citazione viene cercata nella nota, singolarmente. La verifica normalizza gli spazi bianchi e ignora le maiuscole:
+\begin{equation}
+  \mathrm{grounded}(e, n) \;=\; \mathds{1}\big[\;\mathrm{norm}(e) \ \text{è sottostringa di} \ \mathrm{norm}(n)\;\big],
+  \qquad
+  \mathrm{norm}(x) = \mathrm{casefold}\big(\mathrm{collapse}(x)\big),
+  \label{eq:grounded}
+\end{equation}
+Nient'altro viene tollerato: punteggiatura e simboli devono corrispondere. La severità è intenzionale, perché una citazione riscritta è un modello che altera la cartella clinica mentre dichiara di citarla.
+
+\begin{remark}\label{rem:limite-grounding}
+La \eqref{eq:grounded} garantisce che il passaggio \emph{esista}, non che l'inferenza tratta da esso sia valida. Un controesempio osservato: al criterio di esclusione \emph{previous cardiac surgery} un modello ha risposto affermativamente citando \texttt{c-section x 2}, passaggio realmente presente nella nota e quindi verificato, confondendo un parto cesareo con un intervento cardiaco. Il singolo errore è sufficiente a far classificare lo studio come \textsc{excluded}. Nessuna delle metriche automatiche definite in questo lavoro intercetta un errore di questo tipo: solo la lettura umana lo fa, ed è la ragione per cui il protocollo di selezione del giudice (Sezione~\ref{sec:selezione-giudice}) include una fase di ispezione manuale su topic di taratura.
+\end{remark}
+
+\subsection{Aggregazione e riordino}\label{sec:aggregazione}
+
+I verdetti sui singoli criteri vanno ricomposti in una decisione sullo studio. Sia $\mathcal{I}$ l'insieme dei criteri di inclusione e $\mathcal{E}$ quello di esclusione, e $v(c) \in \{\texttt{yes}, \texttt{no}, \texttt{unclear}\}$ il verdetto sul criterio $c$.
+
+\paragraph{Etichetta.} L'etichetta predetta è definita da una cascata di condizioni:
+\begin{equation}
+  \hat{\ell} \;=\;
+  \begin{cases}
+    \textsc{excluded}    & \text{se } \exists\, c \in \mathcal{E} : v(c) = \texttt{yes},\\[2pt]
+    \textsc{ineligible}  & \text{altrimenti, se } \exists\, c \in \mathcal{I} : v(c) = \texttt{no},\\[2pt]
+    \textsc{unjudged}    & \text{se lo studio non è stato verificato,}\\[2pt]
+    \textsc{eligible}    & \text{altrimenti.}
+  \end{cases}
+  \label{eq:etichetta}
+\end{equation}
+L'ordine delle condizioni è sostanziale: un criterio di esclusione soddisfatto è informazione più forte di un criterio di inclusione mancato, e prevale quando entrambi si verificano.
+
+\paragraph{Punteggio.} Fra gli studi classificati \textsc{eligible} serve un ordinamento. Sia $n = |\mathcal{I}|$ il numero di criteri di inclusione e
+\begin{equation}
+  m \;=\; \sum_{c \in \mathcal{I}} \Big( \mathds{1}\big[v(c) = \texttt{yes}\big] + \omega \cdot \mathds{1}\big[v(c) = \texttt{unclear}\big] \Big)
+  \label{eq:soddisfatti}
+\end{equation}
+il numero di criteri soddisfatti, dove $\omega \in [0,1]$ è il peso attribuito all'incertezza. Il punteggio è la frazione soddisfatta con smorzamento additivo:
+\begin{equation}
+  \sigma \;=\; \frac{m + \alpha}{n + 2\alpha}, \qquad \alpha = 1.
+  \label{eq:score}
+\end{equation}
+Lo smorzamento alla Laplace è necessario perché la frazione grezza $m/n$ non distingue l'evidenza sottile da quella solida: uno studio con due criteri su due soddisfatti otterrebbe $1{,}0$ e supererebbe uno con nove su dieci. La \eqref{eq:score} attribuisce ai due casi rispettivamente $0{,}75$ e $0{,}83$, riportando l'ordine a quello desiderato. Il parametro $\alpha$ governa la forza dello smorzamento e $\omega$ il trattamento dell'incertezza; entrambi sono oggetto dell'ablation della Sezione~\ref{sec:res-aggregazione}, che non richiede nuove chiamate al modello.
+
+\paragraph{Ordinamento.} La lista dei primi $\delta$ studi viene riordinata per chiave lessicografica
+\begin{equation}
+  \big(\hat{\ell},\; -\sigma,\; \rho\big),
+  \label{eq:ordinamento}
+\end{equation}
+con $\hat{\ell} \in \{0,1,2,3\}$ nell'ordine \textsc{eligible} $<$ \textsc{unjudged} $<$ \textsc{ineligible} $<$ \textsc{excluded} e $\rho$ la posizione originale, che agisce come criterio di rottura dei pari mantenendo l'ordine prodotto dal recupero. La coda oltre $\delta$ resta intatta.
+
+La posizione di \textsc{unjudged} merita una nota. Uno studio non verificato è collocato \emph{sopra} uno che sappiamo inadatto: l'assenza di prove non è una prova contraria, e degradare ciò che non è stato esaminato equivarrebbe a punire il sistema per non aver speso tempo di calcolo.
+
+\subsection{Interfaccia}\label{sec:interfaccia}
+
+L'interfaccia non è un accessorio dimostrativo ma la forma in cui il sistema è utilizzabile, e alcune sue scelte discendono direttamente dalle proprietà discusse sopra.
+
+La verifica è \emph{su richiesta}, un trial alla volta, perché costa decine di secondi; i criteri di ogni studio sono però leggibili \emph{prima} della verifica, segmentati dal segmentatore della Sezione~\ref{sec:segmentazione}, così che il medico possa decidere se valga la pena spendere quel tempo. Accanto a ogni criterio compaiono la citazione e, distinta da essa, la motivazione del modello: la prima è testo della cartella, la seconda è una frase del modello, e confonderle significherebbe attribuire alla cartella affermazioni che non contiene. Una citazione che la \eqref{eq:grounded} non trova è marcata come tale invece di essere nascosta. La nota del paziente è mostrata con i passaggi citati evidenziati nel punto in cui si trovano.
+
+I colori seguono la \emph{conseguenza clinica} e non il valore di verità: un criterio di esclusione risultato vero è segnalato in rosso benché la risposta sia affermativa, perché per il paziente è una cattiva notizia.
+
+\begin{figure}[H]
+\centering
+\draftfig{Schermata dell'interfaccia: nota del paziente con citazioni evidenziate, criteri raggruppati per polarità, verdetti con citazione e motivazione distinte.}
+\caption{Interfaccia di verifica. \ev{Sostituire con la schermata effettiva.}}
+\label{fig:gui}
+\end{figure}
+
+% =========================================================
+\section{Impostazione sperimentale}\label{sec:setup}
+
+\subsection{Protocollo sui dati}\label{sec:protocollo}
+
+Le due edizioni della collezione sono usate con ruoli distinti e non intercambiabili, fissati prima di produrre qualunque risultato.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{llp{6.2cm}c}
+\toprule
+Insieme & Topic & Uso & Riportabile \\
+\midrule
+2021, 1--11  & 11 & taratura di prompt e schema, ispezione manuale degli output, prove di funzionamento & no \\
+2021, 12--75 & 64 & ogni scelta di progetto: encoder, modalità di ricerca, $\kappa$, profondità, giudice, aggregazione & sì \\
+2022         & 50 & valutazione finale, una sola esecuzione a sistema congelato & sì \\
+\bottomrule
+\end{tabular}
+\caption{Ruolo dei tre insiemi. I topic di taratura non producono numeri riportabili: scegliere su un dato e misurare sullo stesso dato sovrastima sistematicamente la prestazione.}
+\label{tab:protocollo}
+\end{table}
+
+All'interno dello sviluppo, i topic 12--43 sono impiegati per il confronto fra giudici e per la valutazione della seconda fase; i topic 44--75 restano non utilizzati e disponibili per un eventuale controllo indipendente.
+
+\begin{remark}
+Un contatto con il test set va dichiarato. Il sottoinsieme giudicato descritto nella Sezione~\ref{sec:dati} è costruito prendendo gli studi che compaiono nei file di giudizio di \emph{entrambe} le edizioni: l'indice contiene quindi anche gli studi giudicati nel 2022. Nessuna etichetta ha influenzato alcuna scelta di progetto, e la costruzione è la stessa per tutti i sistemi confrontati; la conseguenza è però che anche il risultato del 2022 sarà gonfiato dalla stessa selezione, e va letto come tale.
+\end{remark}
+
+\subsection{Valutazione in presenza di giudizi incompleti}\label{sec:incompleti}
+
+Come osservato nella Sezione~\ref{sec:metriche-standard}, i documenti fuori dal pool sono trattati da \texttt{trec\_eval} come non rilevanti. Quando l'indice contiene l'intero corpus, una parte dei documenti recuperati in alto non è mai stata giudicata, e la penalizzazione che ne consegue è in parte reale --- sono distrattori che il sistema deve saper collocare in basso --- e in parte artefatto. Riportiamo quindi tre viste complementari: le metriche sul sottoinsieme giudicato, che costituiscono un \emph{limite superiore} e servono al confronto fra sistemi; le stesse metriche sul corpus completo, che costituiscono un \emph{limite inferiore}; e \emph{bpref} sul corpus completo, robusta all'incompletezza. Affianchiamo la quota di documenti non giudicati nelle prime posizioni, che misura direttamente il rumore con cui la seconda fase deve confrontarsi.
+
+\subsection{Metodologia statistica}\label{sec:statistica}
+
+\subsubsection{Variabilità fra topic e confronto appaiato}\label{sec:varianza}
+
+La prima osservazione che condiziona il disegno riguarda la dispersione delle prestazioni fra pazienti diversi. Sui topic di sviluppo, la ricerca densa con l'encoder selezionato ottiene
+\begin{equation*}
+  \overline{\mathrm{nDCG@}10^{*}} = 0{,}3031, \qquad s = 0{,}2212,
+\end{equation*}
+cioè una deviazione standard pari a quasi tre quarti della media. La difficoltà del singolo caso clinico domina qualunque differenza fra sistemi. Ne segue che i confronti vanno condotti \emph{appaiati}, topic per topic, e che le medie aggregate vanno interpretate con cautela.
+
+Definiamo per ogni topic $q$ la differenza $\Delta_q = M_A(q) - M_B(q)$ fra i due sistemi confrontati. La differenza minima rilevabile con un test a due code di livello $\alpha$ e potenza $1-\beta$ è
+\begin{equation}
+  \delta_{\min} \;=\; \big(z_{1-\alpha/2} + z_{1-\beta}\big)\,\frac{s_{\Delta}}{\sqrt{n}},
+  \label{eq:mdd}
+\end{equation}
+con $s_{\Delta}$ deviazione standard delle differenze e $n$ numero di topic. Il valore di $s_{\Delta}$ dipende da quanto i due sistemi sono correlati: due encoder diversi producono liste diverse e risultano poco correlati (correlazione di $0{,}581$ fra i punteggi per topic di due encoder della nostra ablation, da cui $s_{\Delta} = 0{,}2073$), mentre due giudici che riordinano la \emph{stessa} shortlist possono muoversi solo entro lo spazio delimitato dall'oracolo, e le loro differenze hanno dispersione molto minore.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{rcc}
+\toprule
+Topic & Confronto fra encoder & Confronto fra giudici ($\delta = 50$) \\
+\midrule
+10 & $0{,}184$ & $0{,}080$ \\
+20 & $0{,}130$ & $0{,}057$ \\
+32 & $0{,}103$ & $0{,}045$ \\
+64 & $0{,}073$ & $0{,}032$ \\
+\bottomrule
+\end{tabular}
+\caption{Differenza minima rilevabile di $\mathrm{nDCG@}10^{*}$ secondo la \eqref{eq:mdd}, con $\alpha = 0{,}05$ e potenza $0{,}80$. Per il confronto fra giudici $s_{\Delta}$ è stimata come metà dell'intervallo fra classifica di partenza e oracolo, che è il massimo spostamento che un riordino può produrre.}
+\label{tab:mdd}
+\end{table}
+
+\subsubsection{Test di significatività}\label{sec:test}
+
+I valori della Tabella~\ref{tab:mdd} usano l'approssimazione normale e vanno intesi come ordine di grandezza: la distribuzione di $\mathrm{nDCG@}10$ per topic non è normale, essendo concentrata su zero per una quota consistente dei casi. Per i confronti riportati nella Sezione~\ref{sec:risultati} impieghiamo il \emph{test di permutazione appaiato}, che non richiede assunzioni distribuzionali: sotto l'ipotesi nulla i due sistemi sono intercambiabili, quindi il segno di ciascuna $\Delta_q$ può essere invertito con probabilità $1/2$, e il $p$-value è la frazione delle $2^{n}$ (o di un campione di esse) riassegnazioni che producono una differenza media almeno pari a quella osservata. La scelta segue la pratica raccomandata per la valutazione in recupero dell'informazione \cite{smucker2007comparison}.
+
+\subsubsection{Potenza delle misure per criterio}\label{sec:potenza-criteri}
+
+Le misure sul comportamento del giudice non si contano per topic ma per \emph{criterio}, e la loro numerosità è di ordini di grandezza superiore: con $1\,600$ studi per modello e una media misurata di $18{,}2$ criteri per studio si ottengono circa $29\,000$ osservazioni. I criteri dello stesso studio non sono però indipendenti --- un modello che ne salta uno tende a saltarne altri nello stesso blocco --- e la numerosità efficace va corretta per l'effetto di raggruppamento
+\begin{equation}
+  \mathrm{deff} \;=\; 1 + \big(\overline{m} - 1\big)\,\rho, \qquad n_{\text{eff}} = \frac{n}{\mathrm{deff}},
+  \label{eq:deff}
+\end{equation}
+con $\overline{m}$ dimensione media del gruppo e $\rho$ correlazione intra-gruppo.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{crrrrr}
+\toprule
+$\rho$ & $\mathrm{deff}$ & $n_{\text{eff}}$ & $p = 5\%$ & $p = 10\%$ & $p = 25\%$ \\
+\midrule
+$0{,}0$ & $1{,}00$ & $29\,120$ & $0{,}51\%$ & $0{,}70\%$ & $1{,}00\%$ \\
+$0{,}1$ & $2{,}72$ & $10\,706$ & $0{,}83\%$ & $1{,}15\%$ & $1{,}66\%$ \\
+$0{,}2$ & $4{,}44$ & $6\,559$  & $1{,}07\%$ & $1{,}47\%$ & $2{,}12\%$ \\
+$0{,}3$ & $6{,}16$ & $4\,727$  & $1{,}26\%$ & $1{,}73\%$ & $2{,}49\%$ \\
+\bottomrule
+\end{tabular}
+\caption{Differenza minima rilevabile su un tasso per criterio, al variare della correlazione intra-studio, con $1\,600$ studi per modello. Anche nell'ipotesi pessimistica si distinguono differenze di due o tre punti percentuali, contro i cinque punti di $\mathrm{nDCG@}10^{*}$ della Tabella~\ref{tab:mdd}.}
+\label{tab:potenza-criteri}
+\end{table}
+
+\subsubsection{L'oracolo e la scelta della profondità}\label{sec:profondita}
+
+Il riordino agisce solo sui primi $\delta$ risultati. Per quantificare lo spazio di manovra che questo lascia, definiamo l'\emph{oracolo} a profondità $\delta$ come il riordino che colloca in testa tutti gli studi eleggibili presenti nella shortlist, conservando l'ordine originale per i restanti. È il massimo ottenibile da qualunque giudice, perfetto compreso, e la distanza fra classifica di partenza e oracolo è l'intervallo entro cui due giudici possono differenziarsi.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{rrrrrr}
+\toprule
+$\delta$ & Studi/modello & $\mathrm{R@}\delta$ & Oracolo & Spazio & $\delta_{\min}/\text{Spazio}$ \\
+\midrule
+$20$  & $640$   & $0{,}113$ & $0{,}6056$ & $+0{,}3025$ & $15{,}9\%$ \\
+$30$  & $960$   & $0{,}150$ & $0{,}7211$ & $+0{,}4181$ & $13{,}5\%$ \\
+$\mathbf{50}$ & $\mathbf{1\,600}$ & $\mathbf{0{,}209}$ & $\mathbf{0{,}8346}$ & $\mathbf{+0{,}5315}$ & $\mathbf{10{,}7\%}$ \\
+$75$  & $2\,400$ & --- & $0{,}9056$ & $+0{,}6025$ & $10{,}0\%$ \\
+$100$ & $3\,200$ & $0{,}314$ & $0{,}9329$ & $+0{,}6298$ & $10{,}2\%$ \\
+\bottomrule
+\end{tabular}
+\caption{Tetto imposto dalla profondità della shortlist, sui topic di sviluppo con ricerca densa. La classifica di partenza ottiene $\mathrm{nDCG@}10^{*} = 0{,}3031$; la colonna \emph{Spazio} è il guadagno dell'oracolo rispetto a essa. L'ultima colonna rapporta la differenza minima rilevabile su $32$ topic allo spazio disponibile: è la sensibilità relativa del confronto. Il costo cresce linearmente in $\delta$, la sensibilità smette di migliorare oltre $\delta = 50$.}
+\label{tab:profondita}
+\end{table}
+
+La Tabella~\ref{tab:profondita} motiva quantitativamente la scelta $\delta = 50$: fino a quel valore ogni studio aggiunto alla shortlist allarga lo spazio in cui un giudice può distinguersi più di quanto aggiunga rumore, oltre no. A profondità $100$ il rapporto peggiora, pur raddoppiando il costo.
+
+\subsection{Protocollo di selezione del giudice}\label{sec:selezione-giudice}
+
+I tre modelli sono confrontati sulla stessa shortlist, sugli stessi topic e con
+gli stessi parametri di generazione; la decisione segue un ordine fissato prima
+di osservare i risultati.
+
+\begin{description}
+  \item[Criterio eliminatorio] un modello che salta sistematicamente criteri non
+    è confrontabile con gli altri, perché sta rispondendo a una domanda più
+    facile. La copertura, misurata rispetto al riferimento del segmentatore, è
+    quindi una condizione di ammissibilità e non un punto di merito.
+  \item[Criterio principale] fra i modelli ammissibili si confrontano le metriche
+    di classifica della Sezione~\ref{sec:res-giudici}, con test di permutazione
+    appaiato. Una differenza inferiore alla soglia della Tabella~\ref{tab:mdd}
+    va dichiarata non distinguibile, non interpretata.
+  \item[Criterio di controllo] decisività e fondatezza vanno lette insieme: un
+    modello che risponde \texttt{unclear} a ogni criterio non produce alcuna
+    citazione infondata ed è inutile, uno che decide sempre citando a sproposito
+    è dannoso. Un vincitore per classifica che risultasse anomalo su queste due
+    misure segnala un effetto non compreso e richiede di indagare prima di
+    concludere.
+  \item[Ispezione manuale] per i modelli in testa, lettura integrale dei verdetti
+    su un topic di \emph{taratura}. È l'unico strumento che intercetta gli errori
+    dell'Osservazione~\ref{rem:limite-grounding}, in cui una citazione autentica
+    sostiene un'inferenza sbagliata, e si svolge su topic esclusi dalla
+    valutazione proprio perché l'ispezione dettagliata di un topic ne compromette
+    l'uso successivo come misura.
+  \item[Criterio di parità] a differenze non distinguibili si sceglie il modello
+    meno costoso, come già fatto per l'encoder nella Sezione~\ref{sec:res-encoder}.
+\end{description}
+
+\subsection{Ambiente di esecuzione}\label{sec:ambiente}
+
+L'indicizzazione e la valutazione della prima fase sono eseguite su calcolatore personale con acceleratore Apple Silicon; la seconda fase su acceleratori NVIDIA T4 messi a disposizione dalla piattaforma Kaggle, con i modelli serviti da Ollama \cite{ollama}. I parametri di generazione sono fissati a temperatura nulla, modalità di ragionamento esplicito disattivata e finestra di contesto $16\,384$ token per tutti i modelli, così che le differenze osservate siano attribuibili al modello e non alla configurazione.
+
+\ev{Specificare il modello esatto di Mac e la quantizzazione dei pesi usata per ciascun modello, come riportata dal registro di Ollama.}
+
+% =========================================================
+\section{Risultati}\label{sec:risultati}
+
+\subsection{Prima fase: selezione dell'encoder}\label{sec:res-encoder}
+
+L'ablation è fattoriale: due famiglie --- \textsc{bge}, generale, e \textsc{MedEmbed}, suo fine-tune medico --- per due taglie. Poiché le due famiglie condividono architettura e dimensione dei vettori, il confronto isola l'effetto del dominio da quello della capacità.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{llrrrrrr}
+\toprule
+Encoder & Par. & nDCG@10 & nDCG@10$^{*}$ & P@10 & P@10$^{*}$ & R@1000 & excl@10 \\
+\midrule
+bge-small      & 33M  & --- & $0{,}2511$ & --- & --- & --- & --- \\
+medembed-small & 33M  & $0{,}4249$ & $0{,}2991$ & $0{,}5240$ & $0{,}2787$ & $0{,}7341$ & $2{,}45$ \\
+bge-base       & 109M & $0{,}4329$ & $0{,}2973$ & $0{,}5413$ & $0{,}2880$ & $0{,}7302$ & $2{,}53$ \\
+medembed-base  & 109M & $0{,}4226$ & $\mathbf{0{,}3065}$ & $0{,}5173$ & $0{,}2853$ & $\mathbf{0{,}7610}$ & $\mathbf{2{,}32}$ \\
+\bottomrule
+\end{tabular}
+\caption{Ablation degli encoder, ricerca densa, edizione 2021, sottoinsieme giudicato, $\ell = 1000$. L'asterisco indica le metriche calcolate su $y^{*}$, cioè con i soli studi eleggibili considerati rilevanti. \ev{Completare la riga bge-small rieseguendo la valutazione; i valori mancanti non sono stati conservati.}}
+\label{tab:encoder}
+\end{table}
+
+Due letture. Sulla metrica che conta per il nostro obiettivo, $\mathrm{nDCG@}10^{*}$, il modello medico da $33$M supera quello generale da $109$M: il fine-tuning di dominio vale più di un aumento di capacità di oltre tre volte. All'interno della famiglia medica, invece, il passaggio da \emph{small} a \emph{base} produce una differenza che il confronto appaiato non distingue dal rumore --- $17$ vittorie contro $18$ sui topic --- coerentemente con la Tabella~\ref{tab:mdd}, che su $64$ topic non rileva differenze inferiori a $0{,}073$. Si sceglie quindi il modello più economico, \textsc{MedEmbed-small}.
+
+\ev{Aggiungere il $p$-value del test di permutazione per i confronti medembed-small contro bge-base e medembed-small contro medembed-base.}
+
+\subsection{Prima fase: modalità di ricerca}\label{sec:res-modalita}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{llrrrrrr}
+\toprule
+Encoder & Modalità & nDCG@10 & nDCG@10$^{*}$ & P@10 & P@10$^{*}$ & R@1000 & excl@10 \\
+\midrule
+\multirow{3}{*}{medembed-small}
+ & densa   & $\mathbf{0{,}4249}$ & $\mathbf{0{,}2991}$ & $0{,}5240$ & $\mathbf{0{,}2787}$ & $\mathbf{0{,}7341}$ & $2{,}45$ \\
+ & BM25    & $0{,}2779$ & $0{,}1648$ & $0{,}3693$ & $0{,}1587$ & $0{,}3901$ & $2{,}11$ \\
+ & ibrida  & $0{,}4070$ & $0{,}2658$ & $\mathbf{0{,}5267}$ & $0{,}2520$ & $0{,}6818$ & $2{,}75$ \\
+\midrule
+\multirow{2}{*}{bge-base}
+ & densa   & $0{,}4329$ & $0{,}2973$ & $0{,}5413$ & $0{,}2880$ & $0{,}7302$ & $2{,}53$ \\
+ & ibrida  & $0{,}4302$ & $0{,}2797$ & $0{,}5520$ & $0{,}2653$ & $0{,}6698$ & $2{,}87$ \\
+\midrule
+\multirow{2}{*}{medembed-base}
+ & densa   & $0{,}4226$ & $0{,}3065$ & $0{,}5173$ & $0{,}2853$ & $0{,}7610$ & $2{,}32$ \\
+ & ibrida  & $0{,}4259$ & $0{,}2768$ & $0{,}5440$ & $0{,}2627$ & $0{,}6970$ & $2{,}81$ \\
+\bottomrule
+\end{tabular}
+\caption{Confronto fra modalità di recupero. La riga BM25 è identica per tutti gli encoder, non dipendendo dalla rappresentazione densa, ed è riportata una sola volta.}
+\label{tab:modalita}
+\end{table}
+
+La fusione con BM25 non conviene con l'encoder selezionato: perde su $\mathrm{nDCG@}10^{*}$, su $\mathrm{P@}10^{*}$ e sul richiamo, e per giunta \emph{aumenta} il numero di studi esclusi nelle prime posizioni, da $2{,}45$ a $2{,}75$. La spiegazione è coerente con la tesi della Sezione~\ref{sec:tesi}: la corrispondenza lessicale premia gli studi che condividono il vocabolario della nota, e un trial che esclude il paziente per una terapia che egli ha già ricevuto condivide con la nota proprio il nome di quella terapia.
+
+\ev{Verificare se l'ibrido conserva un vantaggio sul richiamo a profondità 50, che è la grandezza rilevante per la seconda fase, e riportarlo.}
+
+\subsection{Prima fase: costante di fusione}\label{sec:res-rrf}
+
+La fusione integrata nel motore impone $\kappa = 1$. Con questa scelta il contributo della prima posizione vale $1/2$ e quello della decima $1/11$: un rapporto di $5{,}5$ contro il rapporto di $1{,}15$ prodotto da $\kappa = 60$. Il decadimento ripido annulla di fatto il premio all'accordo fra le liste, che è la ragione per cui si fonde.
+
+\ev{Riportare la tabella del confronto $\kappa = 1$ contro $\kappa = 60$ a parità di tutto il resto; il valore misurato in fase preliminare era una perdita di circa 8 punti percentuali relativi di nDCG@10.}
+
+\subsection{Prima fase: prefisso di istruzione}\label{sec:res-prefisso}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lrrrrrr}
+\toprule
+Configurazione & nDCG@10 & nDCG@10$^{*}$ & P@10 & P@10$^{*}$ & R@1000 & excl@10 \\
+\midrule
+con prefisso   & $\mathbf{0{,}4249}$ & $0{,}2991$ & $\mathbf{0{,}5240}$ & $\mathbf{0{,}2787}$ & $\mathbf{0{,}7341}$ & $2{,}45$ \\
+senza prefisso & $0{,}4177$ & $\mathbf{0{,}3001}$ & $0{,}5013$ & $0{,}2733$ & $0{,}7254$ & $\mathbf{2{,}28}$ \\
+\bottomrule
+\end{tabular}
+\caption{Effetto del prefisso di istruzione sul lato query, encoder \textsc{MedEmbed-small}, ricerca densa. L'effetto è positivo su tutte le metriche graduate e sostanzialmente nullo sulla metrica ristretta agli eleggibili.}
+\label{tab:prefisso}
+\end{table}
+
+Il prefisso migliora le metriche che contano anche gli studi esclusi e lascia invariata quella che non li conta. La lettura più semplice è che aiuti il modello a riconoscere l'argomento clinico --- il che porta in alto tutti gli studi pertinenti, eleggibili o escludenti che siano --- senza incidere sulla distinzione fra le due classi, che è precisamente ciò che la prima fase non sa fare.
+
+\subsection{Prima fase: valutazione in presenza di rumore}\label{sec:res-corpus}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lrrrrr}
+\toprule
+Indice & nDCG@10$^{*}$ & P@10$^{*}$ & bpref & excl@10 & Non giudicati@10 \\
+\midrule
+sottoinsieme giudicato ($48\,714$) & $0{,}2991$ & $0{,}2787$ & --- & $2{,}45$ & --- \\
+corpus completo ($375\,580$)       & --- & --- & --- & --- & --- \\
+\bottomrule
+\end{tabular}
+\caption{Confronto fra la valutazione sul sottoinsieme giudicato e quella sul corpus completo, encoder \textsc{MedEmbed-small}, ricerca densa. \ev{Da completare dopo la costruzione dell'indice completo.}}
+\label{tab:corpus}
+\end{table}
+
+\ev{Commento: quanto del vantaggio misurato sul sottoinsieme sopravvive al rumore, quanta parte del calo è attribuibile ai non giudicati (da cui bpref), e quale quota della shortlist sottoposta al giudice risulta non giudicata.}
+
+\subsection{Seconda fase: comportamento dei giudici}\label{sec:res-comportamento}
+
+I tre modelli confrontati condividono la shortlist, i topic e ogni parametro di generazione. \textsc{gemma3:27b} e \textsc{MedGemma:27b} condividono inoltre base, taglia e quantizzazione: la differenza fra i due isola il fine-tuning medico. \textsc{gemma4:12b} è il modello in uso e risponde alla domanda pratica se convenga sostituirlo.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lrrrrr}
+\toprule
+Modello & Criteri/studio & JSON invalido & Decisività & Non fondati & s/studio \\
+\midrule
+gemma4:12b     & --- & --- & --- & --- & --- \\
+gemma3:27b     & --- & --- & --- & --- & --- \\
+medgemma:27b   & --- & --- & --- & --- & --- \\
+\midrule
+riferimento (segmentatore) & $18{,}2$ & --- & --- & --- & --- \\
+\bottomrule
+\end{tabular}
+\caption{Comportamento dei modelli giudice. \emph{Criteri/studio} va confrontato con il riferimento prodotto dal segmentatore della Sezione~\ref{sec:segmentazione}: un valore sensibilmente inferiore indica criteri saltati. \emph{Decisività} è la quota di verdetti diversi da \texttt{unclear}, \emph{Non fondati} la quota di verdetti decisivi la cui citazione non supera la \eqref{eq:grounded}. Le due vanno lette insieme: un modello che risponde sempre \texttt{unclear} non produce citazioni infondate ed è inutile. \ev{Da completare.}}
+\label{tab:comportamento}
+\end{table}
+
+\subsection{Seconda fase: effetto sulla classifica}\label{sec:res-giudici}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lrrrrr}
+\toprule
+Sistema & nDCG@10 & nDCG@10$^{*}$ & P@10$^{*}$ & excl@10 & utility@10 \\
+\midrule
+solo recupero (densa)      & --- & $0{,}3031$ & --- & --- & --- \\
+\midrule
++ gemma4:12b               & --- & --- & --- & --- & --- \\
++ gemma3:27b               & --- & --- & --- & --- & --- \\
++ medgemma:27b             & --- & --- & --- & --- & --- \\
+\midrule
+oracolo ($\delta = 50$)    & --- & $0{,}8346$ & --- & --- & --- \\
+\bottomrule
+\end{tabular}
+\caption{Effetto del riordino sulle prime dieci posizioni, topic di sviluppo 12--43, $\delta = 50$. La riga dell'oracolo è il tetto della Tabella~\ref{tab:profondita} e permette di leggere ogni guadagno come frazione dello spazio disponibile. \ev{Da completare.}}
+\label{tab:riordino}
+\end{table}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lrrrr}
+\toprule
+\multirow{2}{*}{Predetto} & \multicolumn{4}{c}{Giudizio di riferimento} \\
+\cmidrule(lr){2-5}
+ & eleggibile & escluso & non rilevante & non giudicato \\
+\midrule
+\textsc{eligible}   & --- & --- & --- & --- \\
+\textsc{unjudged}   & --- & --- & --- & --- \\
+\textsc{ineligible} & --- & --- & --- & --- \\
+\textsc{excluded}   & --- & --- & --- & --- \\
+\bottomrule
+\end{tabular}
+\caption{Matrice di confusione del modello selezionato. Da essa si ricavano il richiamo sugli esclusi, cioè la quota di studi realmente inadatti che il sistema riconosce, e il tasso di esclusione errata della \eqref{eq:fer}. \ev{Da completare, per ciascuno dei tre modelli.}}
+\label{tab:confusione}
+\end{table}
+
+\ev{Commento: quale modello vince e su quali misure, se la differenza fra gemma3:27b e medgemma:27b supera la soglia della Tabella~\ref{tab:mdd}, e come si concilia con l'ipotesi della Sezione~\ref{sec:ipotesi-dominio}.}
+
+\subsection{Seconda fase: aggregazione dei verdetti}\label{sec:res-aggregazione}
+
+L'ablation sui parametri di aggregazione non richiede nuove chiamate al modello: rilegge i verdetti già salvati e ricalcola la \eqref{eq:etichetta} e la \eqref{eq:score}.
+
+\begin{table}[H]
+\centering
+\begin{tabular}{llrrrr}
+\toprule
+$\omega$ & Punteggio & Solo fondati & nDCG@10$^{*}$ & P@10$^{*}$ & excl@10 \\
+\midrule
+$0{,}5$ & smorzato ($\alpha=1$) & no  & --- & --- & --- \\
+$0{,}0$ & smorzato ($\alpha=1$) & no  & --- & --- & --- \\
+$1{,}0$ & smorzato ($\alpha=1$) & no  & --- & --- & --- \\
+$0{,}5$ & frazione grezza       & no  & --- & --- & --- \\
+$0{,}5$ & conteggio             & no  & --- & --- & --- \\
+$0{,}5$ & ordine di recupero    & no  & --- & --- & --- \\
+$0{,}5$ & smorzato ($\alpha=1$) & sì  & --- & --- & --- \\
+\bottomrule
+\end{tabular}
+\caption{Ablation dei parametri di aggregazione. \emph{Solo fondati} indica che i verdetti decisivi privi di citazione verificata vengono degradati a \texttt{unclear}. La riga \emph{ordine di recupero} assegna a tutti gli eleggibili lo stesso punteggio, isolando il contributo della sola classificazione da quello dell'ordinamento interno. \ev{Da completare.}}
+\label{tab:aggregazione}
+\end{table}
+
+\subsection{Valutazione finale}\label{sec:res-test}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lrrrrr}
+\toprule
+Sistema & nDCG@10 & nDCG@10$^{*}$ & P@10$^{*}$ & excl@10 & utility@10 \\
+\midrule
+solo recupero & --- & --- & --- & --- & --- \\
+sistema completo & --- & --- & --- & --- & --- \\
+\bottomrule
+\end{tabular}
+\caption{Edizione 2022, $50$ topic, sistema congelato ed eseguito una sola volta. \ev{Da completare.}}
+\label{tab:test2022}
+\end{table}
+
+\ev{Commento: entità del guadagno rispetto allo sviluppo, e lettura alla luce del diverso sbilanciamento delle classi riportato in Tabella~\ref{tab:qrels}.}
+
+\subsection{Costi}\label{sec:res-costi}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lr}
+\toprule
+Operazione & Costo misurato \\
+\midrule
+apertura dell'indice, una collezione ($48\,714$ punti) & $1{,}7$ s \\
+apertura dell'indice, quattro collezioni               & $8{,}2$ s \\
+caricamento dell'encoder                               & $4{,}3$ s \\
+prima codifica di una query                            & $0{,}8$ s \\
+occupazione su disco, $384$ dimensioni                 & $240$ MB \\
+occupazione su disco, $768$ dimensioni                 & $432$ MB \\
+verifica di uno studio, modello da 12B su acceleratore locale & $\approx 36$ s \\
+verifica di uno studio, modello da 4B su CPU           & $101$ s \\
+\bottomrule
+\end{tabular}
+\caption{Costi misurati. L'apertura dell'indice in modalità locale è proporzionale al numero di punti caricati in memoria e viene pagata a ogni avvio del processo; caricare quattro collezioni quando una sola è in uso quadruplica il tempo di avvio. \ev{Aggiungere i tempi per studio dei modelli da 27B su T4 e il totale in ore di ciascuna esecuzione.}}
+\label{tab:costi}
+\end{table}
+
+% =========================================================
+\section{Discussione}\label{sec:discussione}
+
+\subsection{Dominio contro obbedienza}\label{sec:disc-dominio}
+
+Le due ablation di questo lavoro sottopongono la stessa domanda a due componenti diverse: \emph{la specializzazione su un dominio migliora il compito?} Nel caso dell'encoder la risposta è affermativa e netta, con un modello medico da $33$M di parametri che supera un modello generale tre volte più grande.
+
+\ev{Completare alla luce dei risultati della Sezione~\ref{sec:res-giudici}: se l'esito sul giudice è opposto, l'interpretazione proposta nella Sezione~\ref{sec:ipotesi-dominio} è che il fine-tuning contrastivo di MedEmbed ottimizza esattamente il compito d'uso, mentre la distillazione di MedGemma su domande a scelta multipla ottimizza un compito diverso da quello che chiediamo, cioè estrazione vincolata con citazione letterale; se invece l'esito è concorde, l'ipotesi va rivista.}
+
+\subsection{Tassonomia degli errori}\label{sec:disc-errori}
+
+L'ispezione manuale degli output sui topic di taratura ha fatto emergere alcune categorie di errore ricorrenti, che una media aggregata non rende visibili.
+
+\begin{description}
+  \item[Inferenza errata da citazione corretta] il caso discusso nell'Osservazione~\ref{rem:limite-grounding}: \texttt{c-section x 2} addotto come prova di un precedente intervento cardiaco. La citazione è autentica e supera la verifica; è il ragionamento a essere sbagliato. È la categoria più insidiosa, perché nessuna misura automatica la intercetta e perché un solo errore di questo tipo su quindici criteri è sufficiente a capovolgere la classificazione dello studio.
+  \item[Criterio decisivo mancato] a fronte di una nota che dichiara \emph{She remains symptomatic} e di un criterio di inclusione che richiede pazienti asintomatici, un modello ha risposto \texttt{unclear}. Il passaggio è breve, esplicito e citabile: l'errore non è di conoscenza medica ma di lettura.
+  \item[Riscrittura della citazione] sostituzione di \texttt{-->} con una freccia tipografica, o espansione di \texttt{Pt} in \texttt{Patient}. Innocua nel contenuto, ma è il sintomo di un modello che riformula mentre dichiara di copiare, e la verifica della \eqref{eq:grounded} la segnala correttamente.
+  \item[Ragionamento non citato] un fatto presente nella nota viene usato per decidere ma riportato nella motivazione anziché nelle citazioni, dove sarebbe verificabile.
+\end{description}
+
+\ev{Integrare con gli errori osservati nei tre modelli dell'ablation, indicando per ciascuna categoria una frequenza indicativa.}
+
+\subsection{Limiti}\label{sec:disc-limiti}
+
+\paragraph{La fondatezza non è correttezza.} La verifica della \eqref{eq:grounded} accerta che un passaggio esista nella nota, non che la conclusione che se ne trae sia valida. È una garanzia sulla \emph{provenienza} dell'evidenza, non sulla sua interpretazione, e il sistema va presentato per quello che fa.
+
+\paragraph{Predominanza dell'incertezza.} Sui verdetti raccolti in fase preliminare, circa il $76\%$ dei criteri riceve \texttt{unclear}. Il dato è in larga parte corretto --- una nota di ammissione di poche righe non può rispondere a criteri su esami di laboratorio, consensi informati o punteggi di rischio --- ma implica che la decisione sullo studio poggia su una minoranza dei criteri, e rende il parametro $\omega$ della \eqref{eq:soddisfatti} più influente di quanto sarebbe desiderabile.
+
+\paragraph{Giudizi incompleti.} Le metriche sul sottoinsieme giudicato sovrastimano la prestazione assoluta, come discusso nella Sezione~\ref{sec:dati}; quelle sul corpus completo la sottostimano, perché i documenti non giudicati vengono contati come errori. Il valore vero sta fra le due.
+
+\paragraph{Esecuzione singola.} Ogni configurazione è stata eseguita una volta sola, con temperatura nulla. Ciò rende i risultati riproducibili ma non fornisce alcuna stima della variabilità residua del motore di inferenza.
+
+\paragraph{Sbilanciamento diverso nel test.} Come riportato nella Tabella~\ref{tab:qrels}, nel 2022 gli studi esclusi sono meno numerosi degli eleggibili, al contrario del 2021. Poiché il contributo della seconda fase consiste principalmente nel riconoscere e declassare la classe \emph{escluso}, è ragionevole attendersi su quell'edizione un guadagno inferiore.
+
+\subsection{Considerazioni d'uso}\label{sec:disc-uso}
+
+Il sistema non è uno strumento clinico e non produce decisioni di arruolamento: produce una lista ordinata e, per ogni studio verificato, la traccia del ragionamento che ha condotto al verdetto, perché un medico possa controllarla. L'asimmetria fra i due errori possibili --- trattenere uno studio inadatto contro scartarne uno adatto --- è esplicitamente rappresentata nella \eqref{eq:fer} e nella collocazione di \textsc{unjudged} nell'ordinamento della \eqref{eq:ordinamento}, entrambe scelte a favore della cautela.
+
+% =========================================================
+\section{Conclusioni e sviluppi futuri}\label{sec:conclusioni}
+
+\ev{Sintesi dei risultati ottenuti, una volta disponibili.}
+
+Fra le direzioni che il lavoro lascia aperte:
+
+\begin{itemize}
+  \item un \emph{cross-encoder} come stadio intermedio fra recupero e verifica, per riordinare la shortlist a costo molto inferiore a quello di un modello generativo e restringere il numero di studi da sottoporre al giudice;
+  \item recupero a livello di \emph{criterio} anziché di studio, indicizzando separatamente i criteri segmentati, così che la prima fase possa già penalizzare gli studi i cui criteri di esclusione risuonano con la nota;
+  \item aggregazione del voto di più giudici, sfruttando il fatto che la verifica è ripetibile e che i verdetti sono già memorizzati con una chiave che distingue il modello;
+  \item normalizzazione terminologica tramite ontologie mediche, per ridurre la classe di errori in cui il criterio e la nota chiamano la stessa entità con nomi diversi.
+\end{itemize}
+
+% =========================================================
+\begin{appendices}
+
+\section{Prompt di sistema}\label{app:prompt}
+
+Versione \texttt{d732d3fd}, riportata integralmente. Il messaggio dell'utente contiene la sola nota di ammissione seguita dal blocco dei criteri, senza ulteriori istruzioni, così che dati e istruzioni restino separati.
+
+\begin{lstlisting}[style=promptstyle]
+You are checking a clinical trial's eligibility criteria against a patient's
+admission note.
+
+Read the criteria block and work through every criterion it lists, in order.
+For each one:
+
+- criterion: the criterion itself, shortened to at most ten words.
+- kind: inclusion if it is a requirement the patient has to meet, exclusion if
+  it bars the patient from the trial. The headings inside the block tell you
+  which section you are in.
+- evidence: the passages of the note that settle it, each copied character for
+  character, keeping the note's own abbreviations, acronyms, casing,
+  punctuation and symbols: where the note writes "Pt", quote "Pt", and where it
+  writes "Patient", quote "Patient"; copy "-->" as "-->", never as an arrow. A
+  passage that cannot be found in the note exactly as written is not evidence:
+  it belongs in rationale. Use more than one when the answer needs more than
+  one. Leave the list empty only when the note does not address the criterion
+  at all.
+- rationale: leave it empty whenever the passage you quoted settles the
+  criterion by itself, which is most of the time. Write it only where reading
+  that passage is not enough: the criterion names something the note calls by
+  another name, or the answer follows from what the note says without being
+  stated there. Write it also when the note has nothing to quote at all, to say
+  what is missing. Never reason about a fact without quoting it - if the note
+  contains the fact, it belongs in evidence - and never restate in your own
+  words a passage you have already quoted.
+- verdict: yes if the criterion is true of this patient, no if the note shows
+  it is false, unclear if the note does not settle it. A note that describes
+  one condition in detail says nothing about a different one: not mentioning it
+  is unclear, never no.
+
+Do not merge two criteria into one entry and do not skip any, however long the
+block is.
+
+When the note states the fact, say so: for a criterion "previously treated with
+drug X" and a note saying "6 cycles of drug X", the verdict is yes, not
+unclear. The note is a short admission summary, so many criteria will not be
+addressed by it, and unclear is the right answer for those. Never infer from
+what the note leaves out: a condition the note does not mention is unclear, not
+no.
+\end{lstlisting}
+
+\section{Schema di uscita}\label{app:schema}
+
+Lo schema imposto al decodificatore, in forma abbreviata. L'ordine delle chiavi in \texttt{properties} determina l'ordine di generazione.
+
+\begin{lstlisting}[style=Python]
+{
+  "type": "object",
+  "properties": {
+    "criteria": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "criterion": {"type": "string"},
+          "kind":      {"type": "string", "enum": ["inclusion", "exclusion"]},
+          "evidence":  {"type": "array", "items": {"type": "string"}},
+          "rationale": {"type": "string"},
+          "verdict":   {"type": "string", "enum": ["yes", "no", "unclear"]}
+        },
+        "required": ["criterion", "kind", "evidence", "rationale", "verdict"]
+      }
+    }
+  },
+  "required": ["criteria"]
+}
+\end{lstlisting}
+
+\section{Riproduzione degli esperimenti}\label{app:riproduzione}
+
+\ev{Elenco dei comandi, nell'ordine in cui vanno eseguiti, con i tempi indicativi.}
+
+\section{Tabelle estese}\label{app:tabelle}
+
+\ev{Risultati per singolo topic, distribuzione dei verdetti per modello, esempi completi di verifica.}
+
+\end{appendices}
+
+% =========================================================
+\begin{thebibliography}{99}
+
+\bibitem{trecct2021}
+K.~Roberts, D.~Demner-Fushman, E.~M. Voorhees, S.~Bedrick, W.~R. Hersh,
+\emph{Overview of the TREC 2021 Clinical Trials Track},
+in: Proceedings of the Thirtieth Text REtrieval Conference (TREC 2021), NIST, 2021.
+
+\bibitem{trecct2022}
+K.~Roberts, D.~Demner-Fushman, E.~M. Voorhees, S.~Bedrick, W.~R. Hersh,
+\emph{Overview of the TREC 2022 Clinical Trials Track},
+in: Proceedings of the Thirty-First Text REtrieval Conference (TREC 2022), NIST, 2022.
+
+\bibitem{reimers2019sbert}
+N.~Reimers, I.~Gurevych,
+\emph{Sentence-BERT: Sentence Embeddings using Siamese BERT-Networks},
+in: Proceedings of EMNLP-IJCNLP, 2019, pp.~3982--3992.
+
+\bibitem{karpukhin2020dpr}
+V.~Karpukhin, B.~O\u{g}uz, S.~Min, P.~Lewis, L.~Wu, S.~Edunov, D.~Chen, W.~Yih,
+\emph{Dense Passage Retrieval for Open-Domain Question Answering},
+in: Proceedings of EMNLP, 2020, pp.~6769--6781.
+
+\bibitem{xiao2024cpack}
+S.~Xiao, Z.~Liu, P.~Zhang, N.~Muennighoff, D.~Lian, J.-Y. Nie,
+\emph{C-Pack: Packed Resources For General Chinese Embeddings},
+in: Proceedings of SIGIR, 2024. arXiv:2309.07597.
+
+\bibitem{robertson2009bm25}
+S.~Robertson, H.~Zaragoza,
+\emph{The Probabilistic Relevance Framework: BM25 and Beyond},
+Foundations and Trends in Information Retrieval 3~(4) (2009) 333--389.
+
+\bibitem{cormack2009rrf}
+G.~V. Cormack, C.~L.~A. Clarke, S.~Buettcher,
+\emph{Reciprocal Rank Fusion Outperforms Condorcet and Individual Rank Learning Methods},
+in: Proceedings of SIGIR, 2009, pp.~758--759.
+
+\bibitem{malkov2020hnsw}
+Y.~A. Malkov, D.~A. Yashunin,
+\emph{Efficient and Robust Approximate Nearest Neighbor Search Using Hierarchical Navigable Small World Graphs},
+IEEE Transactions on Pattern Analysis and Machine Intelligence 42~(4) (2020) 824--836.
+
+\bibitem{jarvelin2002ndcg}
+K.~J\"{a}rvelin, J.~Kek\"{a}l\"{a}inen,
+\emph{Cumulated Gain-Based Evaluation of IR Techniques},
+ACM Transactions on Information Systems 20~(4) (2002) 422--446.
+
+\bibitem{buckley2004bpref}
+C.~Buckley, E.~M. Voorhees,
+\emph{Retrieval Evaluation with Incomplete Information},
+in: Proceedings of SIGIR, 2004, pp.~25--32.
+
+\bibitem{smucker2007comparison}
+M.~D. Smucker, J.~Allan, B.~Carterette,
+\emph{A Comparison of Statistical Significance Tests for Information Retrieval Evaluation},
+in: Proceedings of CIKM, 2007, pp.~623--632.
+
+\bibitem{vangysel2018pytreceval}
+C.~Van Gysel, M.~de Rijke,
+\emph{Pytrec\_eval: An Extremely Fast Python Interface to trec\_eval},
+in: Proceedings of SIGIR, 2018, pp.~873--876.
+
+\bibitem{hinton2015distilling}
+G.~Hinton, O.~Vinyals, J.~Dean,
+\emph{Distilling the Knowledge in a Neural Network},
+arXiv:1503.02531, 2015.
+
+\bibitem{rafailov2023dpo}
+R.~Rafailov, A.~Sharma, E.~Mitchell, S.~Ermon, C.~D. Manning, C.~Finn,
+\emph{Direct Preference Optimization: Your Language Model is Secretly a Reward Model},
+in: Advances in Neural Information Processing Systems (NeurIPS), 2023.
+
+\bibitem{hu2022lora}
+E.~J. Hu, Y.~Shen, P.~Wallis, Z.~Allen-Zhu, Y.~Li, S.~Wang, L.~Wang, W.~Chen,
+\emph{LoRA: Low-Rank Adaptation of Large Language Models},
+in: International Conference on Learning Representations (ICLR), 2022.
+
+\bibitem{french1999catastrophic}
+R.~M. French,
+\emph{Catastrophic forgetting in connectionist networks},
+Trends in Cognitive Sciences 3~(4) (1999) 128--135.
+
+\bibitem{medgemma2025}
+Google Research and Google DeepMind,
+\emph{MedGemma Technical Report},
+arXiv:2507.05201, 2025.
+
+\bibitem{chen2023meditron}
+Z.~Chen et al.,
+\emph{MEDITRON-70B: Scaling Medical Pretraining for Large Language Models},
+arXiv:2311.16079, 2023.
+
+\bibitem{christophe2024med42}
+C.~Christophe et al.,
+\emph{Med42-v2: A Suite of Clinical LLMs},
+arXiv:2408.06142, 2024.
+
+\bibitem{gururajan2024aloe}
+A.~K. Gururajan et al.,
+\emph{Aloe: A Family of Fine-tuned Open Healthcare LLMs},
+arXiv:2405.01886, 2024.
+
+\bibitem{medembed}
+Abhinand B.,
+\emph{MedEmbed: Medical-Focused Embedding Models},
+modello disponibile su Hugging Face, \texttt{abhinand/MedEmbed-small-v0.1}.
+
+\bibitem{qdrant}
+Qdrant,
+\emph{Qdrant: Vector Database},
+\texttt{https://qdrant.tech}.
+
+\bibitem{ollama}
+Ollama,
+\emph{Ollama: Get up and running with large language models locally},
+\texttt{https://ollama.com}.
+
+\end{thebibliography}
+
+\end{document}
