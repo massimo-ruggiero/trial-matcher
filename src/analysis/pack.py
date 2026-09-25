@@ -3,6 +3,7 @@ corpus nor the index: the topics, the shortlist, and the criteria blocks of the
 trials in it. Everything else stays here."""
 
 import json
+import shutil
 from pathlib import Path
 
 import typer
@@ -24,6 +25,7 @@ def main(
     run: str = "dense_medembed-small",
     topics: str = "12-31",
     depth: int = 20,
+    archive: bool = True,
 ) -> None:
     """Write kaggle/pack, to be uploaded as a Kaggle dataset.
 
@@ -73,7 +75,14 @@ def main(
     print(f"judge calls per model: {kept}\n")
     for path in sorted(out.rglob("*.jsonl")) + sorted(out.rglob("*.txt")):
         print(megabytes(path))
-    print(f"\n-> {out}")
+
+    if archive:
+        # One file to drag into Kaggle's dataset form, which unzips it and
+        # keeps the folders.
+        zipped = Path(shutil.make_archive(str(out.parent / out.name), "zip", root_dir=out))
+        print(f"\n-> {zipped}  ({zipped.stat().st_size / 1e6:.1f} MB)")
+    else:
+        print(f"\n-> {out}")
 
 
 if __name__ == "__main__":

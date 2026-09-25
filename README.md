@@ -173,12 +173,18 @@ trial in lista, circa 2 MB invece di 239:
 uv run python -m src.analysis.pack --topics 12-31 --depth 20
 ```
 
-Si carica `kaggle/pack` come dataset Kaggle (`trial-matcher-pack`) e si importa
-`kaggle/judge_ablation.ipynb`. Il notebook clona il repo, installa Ollama, e
-giudica la stessa shortlist con ogni modello. Serve GPU T4 x2 e internet attivo.
+Produce anche `kaggle/pack.zip` (0,6 MB), che si trascina in *New Dataset* su
+Kaggle: lo estrae mantenendo le cartelle. Il nome del dataset è indifferente,
+il notebook cerca i file per nome.
 
-La prima esecuzione ha `SMOKE = True`: un topic, un trial, due minuti, per
+Il notebook si apre da *Import Notebook → GitHub*, scegliendo questo repository
+e `kaggle/judge_ablation.ipynb`. Clona il repo, installa Ollama e giudica la
+stessa shortlist con ogni modello. Servono **GPU T4 x2** e **internet attivo**
+nelle impostazioni.
+
+La prima esecuzione ha `SMOKE = True`: un topic, un trial, pochi minuti, per
 verificare che i modelli si carichino e che i verdetti finiscano dove devono.
+Poi `SMOKE = False` e *Save Version*, che gira in batch a browser chiuso.
 
 I percorsi sono variabili d'ambiente, perché su Kaggle l'input è in sola
 lettura:
