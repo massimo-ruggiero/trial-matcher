@@ -126,19 +126,25 @@ def main(
     notes = {str(t["topic_id"]): t["text"] for t in load_topics(year)}
     shortlist = load_shortlist(RUNS / f"{run}{year}.txt", depth)
     chosen = sorted(expand(topics) & set(shortlist) if topics else set(shortlist), key=int)
-    blocks = load_blocks({n for t in chosen for n in shortlist[t]})
 
     out = verdicts_path(year)
     done = done_keys(out)
-    todo = [(t, n) for t in chosen for n in shortlist[t]]
-    print(f"{model}  prompt {PROMPT_VERSION}  topics {topics or 'all'} x top-{depth} = {len(todo)}")
+    planned = [(t, n) for t in chosen for n in shortlist[t]]
+    # Cached work is dropped here rather than skipped inside the loop: a progress
+    # bar that counts trials already paid for reports a finishing time that is
+    # wrong exactly when it matters, which is against a session time limit.
+    todo = [(t, n) for t, n in planned if (t, n, model, PROMPT_VERSION) not in done]
+    cached = len(planned) - len(todo)
+    blocks = load_blocks({n for _, n in todo})
+
+    where = sorted({t for t, _ in todo}, key=int)
+    print(f"{model}  prompt {PROMPT_VERSION}  topics {topics or 'all'} x top-{depth}")
+    print(f"{len(planned)} shortlisted, {cached} already judged, {len(todo)} to go", end="")
+    print(f", from topic {where[0]}" if where else "")
 
     stats: Counter[str] = Counter()
     with open(out, "a") as f:
         for topic, nct_id in tqdm(todo, unit="trial"):
-            if (topic, nct_id, model, PROMPT_VERSION) in done:
-                stats["cached"] += 1
-                continue
             record = judge(notes[topic], blocks.get(nct_id, ""), nct_id, model)
             f.write(
                 json.dumps(
@@ -168,7 +174,7 @@ def main(
                     stats["decisive but ungrounded"] += 1
 
     judged = stats["judged"]
-    print(f"\njudged: {judged}   cached: {stats['cached']}   -> {out.name}")
+    print(f"\njudged: {judged}   cached: {cached}   -> {out.name}")
     if judged:
         print(f"mean seconds per trial: {stats['seconds'] / judged:.1f}")
         print(f"criteria per trial:     {stats['criteria'] / judged:.1f}")
