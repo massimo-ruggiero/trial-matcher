@@ -203,9 +203,16 @@ lettura:
 | `RUNS` | i run file |
 | `DATA_OUT` | i verdetti, in scrittura |
 
-Il file dei verdetti si scarica e si accoda a `data/processed/verdicts2021.jsonl`:
-la chiave `(topic, trial, modello, prompt)` rende l'unione idempotente e permette
-di riprendere una sessione interrotta ricaricando il file nel pacchetto.
+Il file dei verdetti si scarica e si accoda a `data/processed/verdicts2021.jsonl`;
+la chiave `(topic, trial, modello, prompt)` rende l'unione idempotente. Ricostruire
+il pacchetto a quel punto **ci mette dentro anche i verdetti**, quindi una nuova
+versione del dataset contiene lo stato di tutti e ogni sessione riparte da lì:
+
+```
+1000 shortlisted, 855 already judged, 145 to go, from topic 29
+```
+
+Il pacchetto è lo stato completo dell'esperimento, non i soli dati di partenza.
 
 **Protocollo dell'ablation.** Trentadue topic (12-43) per profondità 50 fanno
 1.600 trial e circa 29.000 criteri per modello, con un modello per persona in

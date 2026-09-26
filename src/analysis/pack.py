@@ -4,11 +4,13 @@ trials in it. Everything else stays here."""
 
 import json
 import shutil
+from collections import Counter
 from pathlib import Path
 
 import typer
 
-from src.assess.judge import expand, load_shortlist
+from src.assess.judge import expand, load_shortlist, verdicts_path
+from src.assess.prompt import PROMPT_VERSION
 from src.config import DATA_PROCESSED, ROOT, RUNS
 
 app = typer.Typer()
@@ -79,11 +81,31 @@ def main(
     topics_file = processed / f"topics{year}.jsonl"
     topics_file.write_text((DATA_PROCESSED / f"topics{year}.jsonl").read_text())
 
+    # The verdicts travel too, so the pack is the whole state of the experiment
+    # and not just its inputs: a machine that receives it resumes from what has
+    # already been judged, wherever it was judged, instead of paying twice.
+    verdicts = verdicts_path(year)
+    if verdicts.exists():
+        shutil.copy(verdicts, processed / verdicts.name)
+
     print(f"topics: {len(chosen)} ({chosen[0]}-{chosen[-1]})   depth: {depth}")
     print(f"shortlisted trials: {len(wanted)}   blocks found: {found}")
     if found < len(wanted):
         print(f"MISSING {len(wanted) - found} blocks: those trials will be judged empty")
-    print(f"judge calls per model: {kept}\n")
+    print(f"judge calls per model: {kept}")
+
+    if verdicts.exists():
+        rows = [json.loads(line) for line in open(verdicts)]
+        current = [r for r in rows if r["prompt_version"] == PROMPT_VERSION]
+        per_topic: dict[str, Counter] = {}
+        for r in current:
+            per_topic.setdefault(r["model"], Counter())[r["topic_id"]] += 1
+        print(f"\nverdicts carried: {len(current)} on prompt {PROMPT_VERSION}")
+        for model, counts in sorted(per_topic.items()):
+            whole = sorted((t for t, n in counts.items() if n >= depth), key=int)
+            done = f"{len(whole)} topics complete" if whole else "no topic complete"
+            print(f"  {model:<16} {sum(counts.values()):>5} trials, {done}")
+    print()
     for path in sorted(out.rglob("*.jsonl")) + sorted(out.rglob("*.txt")):
         print(megabytes(path))
     print(f"{sum(1 for _ in (out / 'src').rglob('*.py')):>9} .py  src/")
