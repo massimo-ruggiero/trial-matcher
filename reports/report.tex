@@ -363,7 +363,11 @@ Il sistema è organizzato in due fasi in cascata. La prima riduce il corpus a un
 
 \begin{figure}[H]
 \centering
-\draftfig{Schema della metodologia: nota del paziente $\rightarrow$ encoder $\rightarrow$ indice Qdrant $\rightarrow$ shortlist di profondità $\delta$ $\rightarrow$ per ogni candidato, blocco dei criteri + nota $\rightarrow$ modello giudice con schema vincolato $\rightarrow$ verdetti per criterio $\rightarrow$ verifica delle citazioni $\rightarrow$ aggregazione in etichetta e punteggio $\rightarrow$ lista riordinata.}
+% Sorgente: figures/metodologia.drawio. Aprirlo con draw.io, esportare in PDF
+% (File > Export as > PDF, con Crop attivo) e togliere il commento alla riga
+% seguente, eliminando il segnaposto.
+% \includegraphics[width=0.78\textwidth]{figures/metodologia.pdf}
+\draftfig{Schema della metodologia, sorgente in \texttt{figures/metodologia.drawio}: nota del paziente $\rightarrow$ encoder $\rightarrow$ indice Qdrant $\rightarrow$ shortlist di profondità $\delta$ $\rightarrow$ per ogni candidato, blocco dei criteri + nota $\rightarrow$ modello giudice con schema vincolato $\rightarrow$ verdetti per criterio $\rightarrow$ verifica delle citazioni $\rightarrow$ aggregazione in etichetta e punteggio $\rightarrow$ lista riordinata.}
 \caption{Architettura del sistema. La prima fase è responsabile del richiamo, la seconda della precisione: nessun trial assente dalla shortlist può essere recuperato dalla verifica, e nessun trial presente può essere promosso oltre il tetto imposto dal richiamo a profondità $\delta$.}
 \label{fig:architettura}
 \end{figure}

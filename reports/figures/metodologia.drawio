@@ -1,0 +1,73 @@
+<mxfile host="app.diagrams.net" agent="trial-matcher" version="24.0.0">
+  <diagram name="metodologia" id="metodologia">
+    <mxGraphModel dx="900" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="fase1" value="FASE 1 — Recupero" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F7F7F7;strokeColor=#BBBBBB;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontSize=11;fontStyle=1;fontColor=#555555;" vertex="1" parent="1">
+          <mxGeometry x="40" y="100" width="700" height="220" as="geometry" />
+        </mxCell>
+        <mxCell id="fase2" value="FASE 2 — Verifica dei criteri" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F7F7F7;strokeColor=#BBBBBB;dashed=1;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontSize=11;fontStyle=1;fontColor=#555555;" vertex="1" parent="1">
+          <mxGeometry x="40" y="410" width="700" height="300" as="geometry" />
+        </mxCell>
+
+        <mxCell id="nota" value="Nota di ammissione&lt;br&gt;&lt;font style=&quot;font-size: 10px;&quot; color=&quot;#666666&quot;&gt;descrizione testuale del paziente&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;arcSize=20;" vertex="1" parent="1">
+          <mxGeometry x="280" y="30" width="240" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="enc" value="Encoder&lt;br&gt;&lt;b&gt;MedEmbed-small&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 10px;&quot; color=&quot;#666666&quot;&gt;384 dimensioni, prefisso sulla query&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="280" y="140" width="240" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="qdrant" value="Indice &lt;b&gt;Qdrant&lt;/b&gt; in modalità locale&lt;br&gt;&lt;font style=&quot;font-size: 10px;&quot; color=&quot;#666666&quot;&gt;48.714 trial indicizzati&lt;/font&gt;" style="shape=cylinder3;boundedLbl=1;backgroundOutline=1;size=12;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="280" y="230" width="240" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="notaQ" value="un punto, due vettori con nome:&lt;br&gt;denso (coseno) e sparso (BM25)&lt;br&gt;id deterministico uuid5(NCT)" style="shape=note;whiteSpace=wrap;html=1;size=12;fillColor=#FCFCFC;strokeColor=#BBBBBB;fontSize=9;fontStyle=2;align=left;spacingLeft=6;fontColor=#555555;" vertex="1" parent="1">
+          <mxGeometry x="560" y="230" width="165" height="70" as="geometry" />
+        </mxCell>
+
+        <mxCell id="short" value="&lt;b&gt;Shortlist&lt;/b&gt;: primi δ = 50 candidati" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;arcSize=20;" vertex="1" parent="1">
+          <mxGeometry x="280" y="345" width="240" height="40" as="geometry" />
+        </mxCell>
+
+        <mxCell id="blocco" value="Blocco dei criteri&lt;br&gt;&lt;font style=&quot;font-size: 10px;&quot; color=&quot;#666666&quot;&gt;testo integrale, non segmentato&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;fontSize=11;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="450" width="170" height="55" as="geometry" />
+        </mxCell>
+
+        <mxCell id="giudice" value="&lt;b&gt;Modello giudice&lt;/b&gt; locale&lt;br&gt;&lt;font style=&quot;font-size: 10px;&quot; color=&quot;#666666&quot;&gt;decodifica vincolata da schema JSON&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="280" y="447" width="240" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="campi" value="per ogni criterio:&lt;br&gt;&lt;b&gt;criterion → kind → evidence&lt;br&gt;→ rationale → verdict&lt;/b&gt;&lt;br&gt;&lt;br&gt;l&#39;ordine dei campi è l&#39;ordine di&lt;br&gt;generazione: le prove precedono&lt;br&gt;il verdetto" style="shape=note;whiteSpace=wrap;html=1;size=12;fillColor=#FCFCFC;strokeColor=#BBBBBB;fontSize=9;align=left;spacingLeft=6;fontColor=#555555;" vertex="1" parent="1">
+          <mxGeometry x="560" y="430" width="165" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="verifica" value="Verifica delle citazioni&lt;br&gt;&lt;font style=&quot;font-size: 10px;&quot; color=&quot;#666666&quot;&gt;ogni passaggio cercato alla lettera nella nota&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="280" y="550" width="240" height="55" as="geometry" />
+        </mxCell>
+
+        <mxCell id="aggr" value="Aggregazione&lt;br&gt;&lt;font style=&quot;font-size: 10px;&quot; color=&quot;#666666&quot;&gt;etichetta (eligible / ineligible / excluded)&lt;br&gt;e punteggio smorzato&lt;/font&gt;" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="280" y="635" width="240" height="60" as="geometry" />
+        </mxCell>
+
+        <mxCell id="out" value="&lt;b&gt;Lista riordinata&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size: 10px;&quot; color=&quot;#666666&quot;&gt;coda oltre δ invariata&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;arcSize=20;" vertex="1" parent="1">
+          <mxGeometry x="280" y="740" width="240" height="50" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=blockThin;endFill=1;" edge="1" parent="1" source="nota" target="enc"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=blockThin;endFill=1;" edge="1" parent="1" source="enc" target="qdrant"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=blockThin;endFill=1;" edge="1" parent="1" source="qdrant" target="short"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e4" value="per ogni trial" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=blockThin;endFill=1;fontSize=9;fontColor=#666666;" edge="1" parent="1" source="short" target="giudice"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=blockThin;endFill=1;dashed=1;" edge="1" parent="1" source="blocco" target="giudice"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#BBBBBB;endArrow=none;dashed=1;" edge="1" parent="1" source="giudice" target="campi"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#BBBBBB;endArrow=none;dashed=1;" edge="1" parent="1" source="qdrant" target="notaQ"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=blockThin;endFill=1;" edge="1" parent="1" source="giudice" target="verifica"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=blockThin;endFill=1;" edge="1" parent="1" source="verifica" target="aggr"><mxGeometry relative="1" as="geometry" /></mxCell>
+        <mxCell id="e10" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeColor=#333333;endArrow=blockThin;endFill=1;" edge="1" parent="1" source="aggr" target="out"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
